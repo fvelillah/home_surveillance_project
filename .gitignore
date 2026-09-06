@@ -1,0 +1,30 @@
+# Environment & Secrets
+.env
+*.env
+.env.local
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.egg-info/
+dist/
+build/
+# Storage, Database & Media
+data/
+storage/
+*.mp4
+*.mkv
+*.avi
+*.jpg
+*.png
+*.sqlite3
+*.db
+qdrant_storage/
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+*.log
