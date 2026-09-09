@@ -28,3 +28,5 @@ qdrant_storage/
 .idea/
 .DS_Store
 *.log
+# .md
+IMPLEMENTATION_PLAN.md

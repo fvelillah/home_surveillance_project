@@ -200,10 +200,10 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 
 ## 4. Master Task Checklist & Progress Tracker
 
-### Overall Progress: `0 / 30 Tasks Completed (0%)`
+### Overall Progress: `5 / 30 Tasks Completed (16.7%)`
 
 ```
-[ ] Phase 1: Direct HTTP Ingestion & Core Infrastructure (0/5)
+[x] Phase 1: Direct HTTP Ingestion & Core Infrastructure (5/5)
 [ ] Phase 2: Edge Triage & Qdrant Edge (0/4)
 [ ] Phase 3: Central Backend & High-Precision kNN (0/4)
 [ ] Phase 4: Incident Formation & VLM Explainer (0/4)
@@ -215,11 +215,11 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 ---
 
 ### Phase 1: Direct HTTP Ingestion & Core Infrastructure
-- [ ] **Task 1.1**: Initialize project configuration (`pyproject.toml`, `.env.example`, `docker-compose.yml`, `.gitignore`) with `uv` and OpenCV HTTP support.
-- [ ] **Task 1.2**: Implement Dahua Direct HTTP stream worker (`edge/stream_worker.py`) with auto-reconnect backoff, rolling ring buffer, and FPS/latency metrics.
-- [ ] **Task 1.3**: Implement multi-channel capture manager (`edge/capture_manager.py`) orchestrating all 9 camera Sub-Streams and on-demand Main-Stream capture.
-- [ ] **Task 1.4**: Implement sliding window segmenter (`edge/segmenter.py`) and synthetic 9-channel HTTP stream simulator (`scripts/simulate_dahua_feeds.py`).
-- [ ] **Task 1.5**: Implement automated Dahua NVR HTTP connection diagnostic tool (`scripts/test_nvr_connection.py`).
+- [x] **Task 1.1**: Initialize project configuration (`pyproject.toml`, `.env.example`, `docker-compose.yml`, `.gitignore`) with `uv` and OpenCV HTTP support.
+- [x] **Task 1.2**: Implement Dahua Direct HTTP stream worker (`edge/stream_worker.py`) with auto-reconnect backoff, rolling ring buffer, and FPS/latency metrics.
+- [x] **Task 1.3**: Implement multi-channel capture manager (`edge/capture_manager.py`) orchestrating all 9 camera Sub-Streams and on-demand Main-Stream capture.
+- [x] **Task 1.4**: Implement sliding window segmenter (`edge/segmenter.py`) and synthetic 9-channel HTTP stream simulator (`scripts/simulate_dahua_feeds.py`).
+- [x] **Task 1.5**: Implement automated Dahua NVR HTTP connection diagnostic tool (`scripts/test_nvr_connection.py`).
 
 ### Phase 2: Edge Triage & On-Device Vector Store (Qdrant Edge)
 - [ ] **Task 2.1**: Implement lightweight edge feature extractor (`edge/model.py`) supporting MobileNetV3 / VideoMAE ONNX.
