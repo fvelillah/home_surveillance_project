@@ -20,7 +20,7 @@ An end-to-end, modular, and systematic implementation roadmap for building an AI
 |                                                                                                                       |
 |  +---------------------------+   +----------------------------+   +------------------------------------------------+  |
 |  | Multi-HTTP Stream Worker  |-->| Sliding Window Segmenter   |-->| Lightweight Edge Embedder                      |  |
-|  | (9 Dahua Direct Streams)  |   | (10s clips, 2s overlap)     |   | (MobileNetV3 / VideoMAE-edge ONNX)             |  |
+|  | (9 Dahua Direct Streams)  |   | (10s clips, 2s overlap)     |   | (PyTorch MobileNetV3 / EfficientNet-B0)        |  |
 |  +---------------------------+   +----------------------------+   +------------------------------------------------+  |
 |                                                                                          |                            |
 |                                                                                          v                            |
@@ -160,9 +160,9 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 - **1.5 Dahua HTTP Diagnostics Utility (`scripts/test_nvr_connection.py`)**: Multi-channel HTTP stream probe validating latency, FPS, and frame integrity.
 
 ### Phase 2: Edge Triage & On-Device Vector Store (Qdrant Edge)
-- **2.1 Lightweight Edge Feature Extractor (`edge/model.py`)**: MobileNetV3 / VideoMAE ONNX edge feature extractor generating 512-dim/768-dim embeddings in <40ms per clip.
+- **2.1 Mandatory PyTorch Edge Feature Extractor & ONNX Runtime Acceleration (`edge/model.py`, `scripts/export_edge_model.py`)**: Strict PyTorch MobileNetV3-Small / EfficientNet-B0 backbone with temporal average pooling, producing 576-dim/1280-dim (or linearly projected) L2-normalized embeddings in <40ms per clip. Includes standalone and in-engine ONNX model export (`export_edge_model_onnx` with opset 14 and dynamic batch axes) and native ONNX Runtime execution acceleration.
 - **2.2 Qdrant Edge Two-Shard Engine (`edge/detector.py`)**: Dual-shard (mutable recent context + immutable baseline) kNN scorer per camera feed.
-- **2.3 Triage Filter & SQLite Offline Queue (`edge/detector.py`)**: High-recall filter ($T_{\text{edge}} = 0.060$) with local SQLite persistence for internet outage resilience.
+- **2.3 Triage Filter & SQLite Offline Queue (`edge/queue.py`)**: High-recall filter ($T_{\text{edge}} = 0.060$) with crash-resilient SQLite persistence (WAL mode) and background auto-drain synchronization for internet outage resilience.
 - **2.4 Edge FastAPI & Live Stream Proxy (`edge/main.py`)**: FastAPI service on port 7777 streaming live anomaly telemetry and low-latency HTTP video proxy to the dashboard.
 
 ### Phase 3: Central Cloud Backend, High-Precision Embedding & Scoring
@@ -200,12 +200,12 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 
 ## 4. Master Task Checklist & Progress Tracker
 
-### Overall Progress: `5 / 30 Tasks Completed (16.7%)`
+### Overall Progress: `13 / 30 Tasks Completed (43.3%)`
 
 ```
 [x] Phase 1: Direct HTTP Ingestion & Core Infrastructure (5/5)
-[ ] Phase 2: Edge Triage & Qdrant Edge (0/4)
-[ ] Phase 3: Central Backend & High-Precision kNN (0/4)
+[x] Phase 2: Edge Triage & Qdrant Edge (4/4)
+[x] Phase 3: Central Backend & High-Precision kNN (4/4)
 [ ] Phase 4: Incident Formation & VLM Explainer (0/4)
 [ ] Phase 5: Semantic Search & AI Copilot (0/3)
 [ ] Phase 6: Multi-Camera Web Console (0/6)
@@ -222,16 +222,16 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 - [x] **Task 1.5**: Implement automated Dahua NVR HTTP connection diagnostic tool (`scripts/test_nvr_connection.py`).
 
 ### Phase 2: Edge Triage & On-Device Vector Store (Qdrant Edge)
-- [ ] **Task 2.1**: Implement lightweight edge feature extractor (`edge/model.py`) supporting MobileNetV3 / VideoMAE ONNX.
-- [ ] **Task 2.2**: Implement Qdrant Edge two-shard anomaly scorer (`edge/detector.py`) with mutable and immutable HNSW shards.
-- [ ] **Task 2.3**: Implement crash-resilient SQLite offline queue (`edge/detector.py` with `persist-queue`) and auto-drain sync.
-- [ ] **Task 2.4**: Implement Edge FastAPI & HTTP stream proxy server (`edge/main.py`) on port 7777 with live scoring stream.
+- [x] **Task 2.1**: Implement mandatory PyTorch edge feature extractor (`edge/model.py`), standalone/in-engine ONNX export utility (`scripts/export_edge_model.py`, `export_edge_model_onnx`), and ONNX Runtime inference acceleration (supporting MobileNetV3 / EfficientNet with dynamic batch axes).
+- [x] **Task 2.2**: Implement Qdrant Edge two-shard anomaly scorer (`edge/detector.py`) with mutable and immutable HNSW shards.
+- [x] **Task 2.3**: Implement crash-resilient SQLite offline queue (`edge/queue.py` with native WAL mode) and background auto-drain sync.
+- [x] **Task 2.4**: Implement Edge FastAPI & HTTP stream proxy server (`edge/main.py`) on port 7777 with live scoring stream.
 
 ### Phase 3: Central Cloud Backend, High-Precision Embedding & Scoring
-- [ ] **Task 3.1**: Implement Central FastAPI backend (`backend/main.py`) and Pydantic data schemas (`backend/models.py`).
-- [ ] **Task 3.2**: Implement Twelve Labs Marengo client wrapper (`backend/twelvelabs_client.py`) and local model server fallback (`model_server.py`).
-- [ ] **Task 3.3**: Implement central Qdrant baseline indexing and kNN scorer (`backend/anomaly.py`).
-- [ ] **Task 3.4**: Implement edge escalation receiver and multi-model ensemble scorer (`backend/escalation.py`, `backend/ensemble.py`) with temporal boosting.
+- [x] **Task 3.1**: Implement Central FastAPI backend (`backend/main.py`) and Pydantic data schemas (`backend/models.py`).
+- [x] **Task 3.2**: Implement Twelve Labs Marengo client wrapper (`backend/twelvelabs_client.py`) and local model server fallback (`model_server.py`).
+- [x] **Task 3.3**: Implement central Qdrant baseline indexing and kNN scorer (`backend/anomaly.py`).
+- [x] **Task 3.4**: Implement edge escalation receiver and multi-model ensemble scorer (`backend/escalation.py`, `backend/ensemble.py`) with temporal boosting.
 
 ### Phase 4: Incident Formation, VLM Scene Understanding & Governance
 - [ ] **Task 4.1**: Implement incident formation engine (`backend/incidents.py`) with EMA smoothing, hysteresis thresholds, and cooldown merging.

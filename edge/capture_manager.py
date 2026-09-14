@@ -218,6 +218,10 @@ class CaptureManager:
                 len(frames)
             )
             buffered_items = self.get_recent_frames(channel, duration_s=duration_s)
+            if not buffered_items and channel in self.workers:
+                all_buffered = self.workers[channel].get_all_buffered_frames()
+                max_needed = max(int(duration_s * target_fps), 5)
+                buffered_items = all_buffered[-max_needed:]
             frames = [item.frame for item in buffered_items]
 
         if not frames:

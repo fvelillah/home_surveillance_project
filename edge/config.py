@@ -91,6 +91,28 @@ class EdgeConfig:
         self.mock_simulator_port: int = int(os.getenv("MOCK_SIMULATOR_PORT", "8888"))
         self.mock_simulator_num_cameras: int = int(os.getenv("MOCK_SIMULATOR_NUM_CAMERAS", "9"))
 
+        # --- Phase 2: Edge Feature Extractor Knobs (PyTorch) ---
+        self.model_type: str = os.getenv("MODEL_TYPE", "mobilenet_v3")
+        self.embedding_dim: int = int(os.getenv("EMBEDDING_DIM", "576"))
+
+        # --- Phase 2: Qdrant Edge Two-Shard Knobs ---
+        self.qdrant_edge_path: Path = Path(os.getenv("QDRANT_EDGE_PATH", "./data/qdrant_edge"))
+        self.qdrant_edge_url: Optional[str] = os.getenv("QDRANT_EDGE_URL", None)
+        self.edge_triage_threshold: float = float(os.getenv("EDGE_TRIAGE_THRESHOLD", "0.060"))
+        self.edge_top_k: int = int(os.getenv("EDGE_TOP_K", "5"))
+        self.edge_alpha_baseline: float = float(os.getenv("EDGE_ALPHA_BASELINE", "0.7"))
+        self.edge_mutable_max_points: int = int(os.getenv("EDGE_MUTABLE_MAX_POINTS", "200"))
+
+        # --- Phase 2: SQLite Offline Queue & Auto-Drain Knobs ---
+        self.sqlite_queue_path: Path = Path(os.getenv("SQLITE_QUEUE_PATH", "./data/storage/offline_queue.db"))
+        self.central_backend_url: str = os.getenv("CENTRAL_BACKEND_URL", "http://localhost:9876")
+        self.drain_sync_interval_s: float = float(os.getenv("DRAIN_SYNC_INTERVAL_S", "5.0"))
+        self.drain_max_retries: int = int(os.getenv("DRAIN_MAX_RETRIES", "5"))
+        self.triage_poll_interval_s: float = float(os.getenv("TRIAGE_POLL_INTERVAL_S", "1.0"))
+
+        # Create Qdrant storage dir if needed
+        self.qdrant_edge_path.mkdir(parents=True, exist_ok=True)
+
     @staticmethod
     def _parse_camera_names(raw_str: str) -> Dict[int, str]:
         names: Dict[int, str] = {}
