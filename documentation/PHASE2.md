@@ -137,8 +137,8 @@ Continuous 24/7 transmission of 9 high-resolution video streams to cloud analyti
     - `edge_host` (`EDGE_HOST`, default: `"0.0.0.0"`), `edge_port` (`EDGE_PORT`, default: `7777`).
     - `mock_simulator_port` (`MOCK_SIMULATOR_PORT`, default: `8888`), `mock_simulator_num_cameras` (`MOCK_SIMULATOR_NUM_CAMERAS`, default: `9`).
 
-### 3.2 `edge/model.py` — Mandatory PyTorch Edge Feature Extractor & ONNX Runtime Acceleration
-- **Purpose**: Transforms raw video clip tensors into normalized dense feature vectors using a PyTorch pipeline and optional ONNX Runtime engine adapted from `video-anomaly-edge`.
+### 3.2 `edge/model.py` — Mandatory PyTorch Edge Feature Extractor
+- **Purpose**: Transforms raw video clip tensors into normalized dense feature vectors using a PyTorch pipeline adapted from `video-anomaly-edge`.
 - **Key Components**:
   - `EdgeFeatureExtractor` & `load_edge_model()`:
     - **PyTorch Backbones**: Supports torchvision `mobilenet_v3_small` (default, 576-dim) or `efficientnet_b0` (1280-dim) dispatched to `cuda` (if available) or `cpu`.
@@ -149,10 +149,6 @@ Continuous 24/7 transmission of 9 high-resolution video streams to cloud analyti
     - **L2 Normalization**: Normalizes embedding to unit sphere length ($\|\mathbf{v}\|_2 = 1.0$) for cosine distance search in Qdrant Edge.
     - **No Fallback Guarantee**: Completely removes handcrafted deterministic projection matrix and synthetic fallbacks to guarantee robust deep semantic representations.
     - **Latency Profiler**: Instruments inference time in milliseconds (`last_inference_ms` / `get_last_inference_ms()`).
-  - `ONNXEdgeModelSession`:
-    - **ONNX Runtime Acceleration Engine**: Drop-in wrapper around `onnxruntime.InferenceSession` with automatic provider selection (`CUDAExecutionProvider`, `CPUExecutionProvider`).
-    - **Duck-Typing Interoperability**: Accepts both `torch.Tensor` and `np.ndarray` input batches `(B, 3, 224, 224)` and returns feature representations directly, providing seamless compatibility with PyTorch `.eval()` and `.to(device)` workflows.
-    - **Edge Acceleration**: Eliminates PyTorch tensor dispatch overhead and CPU multi-thread contention on resource-constrained edge hardware.
 
 ### 3.3 `scripts/export_edge_model.py` & In-Engine Export Utility — Edge Model Exporter
 - **Purpose**: Standalone CLI utility and programmatic function (`export_edge_model_onnx`) to export MobileNetV3 / EfficientNet to ONNX format for optimized edge runtime execution.

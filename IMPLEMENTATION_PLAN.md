@@ -150,7 +150,236 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 
 ---
 
-## 3. Systematic Phase-by-Phase Roadmap
+## 3. Operator Guide: Cloud Analytics Tier, Central Qdrant & Twelve Labs Configuration
+
+The **Central Cloud Analytics Tier** (Port `9876`) acts as the master AI evaluation hub. It receives high-priority incident escalations from on-premises edge nodes (Port `7777`), performs multi-model ensemble scoring ($70\%$ Cloud + $30\%$ Edge), evaluates candidates against a global multi-camera normal baseline in **Qdrant**, and triggers **Twelve Labs** (Marengo 3.0 / Pegasus 1.5) for high-dimensional video embedding, natural-language search, and VLM scene understanding.
+
+```
+                    +-------------------------------------------------------------------------+
+                    |                 CENTRAL CLOUD ANALYTICS TIER (Port 9876)                |
+                    |                                                                         |
+                    |  +---------------------------+   +-----------------------------------+  |
+                    |  | FastAPI Master Router     |-->| Escalation Handler Pipeline       |  |
+                    |  | (Health, Cameras, Auth)   |   | (POST /api/v1/escalate)           |  |
+                    |  +---------------------------+   +-----------------------------------+  |
+                    |                                                    |                    |
+                    |         +------------------------------------------+                    |
+                    |         |                                          |                    |
+                    |         v                                          v                    |
+                    |  +-------------------------------+   +-------------------------------+  |
+                    |  | Central Qdrant Baseline       |   | Twelve Labs Foundation VLM    |  |
+                    |  | (Port 6333 / Qdrant Cloud)    |   | (Marengo 3.0 / Pegasus 1.5)   |  |
+                    |  | - 9-Channel Vector Baseline   |   | - Cloud Video Embeddings      |  |
+                    |  | - Cosine kNN Anomaly Distance |   | - Natural Language Search     |  |
+                    |  | - In-Memory NumPy Fallback    |   | - Automated Scene Explanation |  |
+                    |  +-------------------------------+   +-------------------------------+  |
+                    |                                                    |                    |
+                    |         +------------------------------------------+                    |
+                    |         |                                                               |
+                    |         v (If Twelve Labs unconfigured / offline)                       |
+                    |  +-------------------------------------------------------------------+  |
+                    |  | Local PyTorch Model Server Fallback (Port 9877)                    |  |
+                    |  | (MobileNetV3 576-dim L2-normalized Feature Extractor)             |  |
+                    |  +-------------------------------------------------------------------+  |
+                    +-------------------------------------------------------------------------+
+```
+
+---
+
+### Step 3.1: Central Qdrant Baseline Configuration
+
+Central Qdrant hosts the pre-calibrated normal baseline vectors across all 9 camera feeds. When an edge device escalates a clip, the cloud tier queries Qdrant for the $k$-nearest normal neighbors to compute the cosine anomaly distance:
+$$S_{\text{cloud}} = 1.0 - \frac{1}{k} \sum_{i=1}^k \text{sim}(\mathbf{q}, \mathbf{b}_i)$$
+
+#### 1. Deployment Options:
+- **Local Docker Cluster (Self-Hosted)**:
+  ```bash
+  docker run -d --name qdrant-central \
+    -p 6333:6333 -p 6334:6334 \
+    -v $(pwd)/data/qdrant_central:/qdrant/storage:z \
+    qdrant/qdrant:latest
+  ```
+- **Managed Qdrant Cloud**:
+  Obtain cluster URL (e.g. `https://xxxxxx.us-east-1-0.aws.cloud.qdrant.io:6333`) and API Key from the Qdrant Cloud Console.
+
+#### 2. Vector Collection & Index Properties:
+- **Collection Name**: `anomaly_baseline` (defined by `COLLECTION_NAME`)
+- **Distance Metric**: `Cosine`
+- **Vector Dimension**: `576` (for MobileNetV3) or `1024` (for Twelve Labs Marengo)
+- **Payload Index Schema**:
+  ```json
+  {
+    "camera_id": "cam-1",
+    "scene_id": "driveway",
+    "source_video": "baseline_cam1_20260915_120000.mp4",
+    "timestamp_ms": 1710000000000
+  }
+  ```
+- **Built-in Resilience**: If the Qdrant daemon is offline or unreachable, `backend/anomaly.py` automatically activates `InMemoryCentralBaselineIndex` (a thread-safe pure NumPy kNN engine) with zero downtime.
+
+---
+
+### Step 3.2: Twelve Labs Cloud VLM Engine Configuration
+
+Twelve Labs provides foundational video intelligence for semantic search and scene understanding.
+
+#### 1. Account & API Key Setup:
+1. Sign up at [Twelve Labs Playground](https://playground.twelvelabs.io/).
+2. Generate an API Key under **Account Settings** > **API Keys**.
+3. Set `TWELVE_LABS_API_KEY="tlk_your_key_here"` in `.env`.
+
+#### 2. Model Engines & Automatic Index Provisioning:
+- **Marengo 3.0 / 2.7 (`marengo2.7` / `marengo3.0`)**: Used for high-dimensional video embeddings and semantic natural language search (`POST /api/v1/search`).
+- **Pegasus 1.5 (`pegasus1.5`)**: Video-Language Model (VLM) for natural language incident description and security Q&A (`POST /api/v1/analyze`).
+- **Auto-Provisioning**: On startup, `backend/twelvelabs_client.py` checks for the indexes specified in `TWELVE_LABS_MARENGO_INDEX_NAME` and `TWELVE_LABS_PEGASUS_INDEX_NAME`. If they do not exist, they are automatically created via the Twelve Labs API.
+- **Graceful Degradation**: If `TWELVE_LABS_API_KEY` is not provided, the central tier seamlessly falls back to the standalone PyTorch Model Server (`model_server.py`) or direct edge feature evaluation without throwing unhandled exceptions.
+
+---
+
+### Step 3.3: Environment Configuration (`.env`)
+
+Add and configure the following environment variables in `.env`:
+
+```env
+# ==============================================================================
+# Central Cloud Analytics Tier Configuration
+# ==============================================================================
+
+# --- Central FastAPI Backend Service ---
+CENTRAL_HOST="0.0.0.0"
+CENTRAL_PORT=9876
+
+# --- Standalone Local PyTorch Model Server Fallback ---
+MODEL_SERVER_URL="http://localhost:9877"
+
+# --- Central Qdrant Baseline Vector Cluster ---
+QDRANT_URL="http://localhost:6333"
+# QDRANT_API_KEY="your-qdrant-cloud-api-key"       # Required only for Qdrant Cloud
+COLLECTION_NAME="anomaly_baseline"
+
+# --- Anomaly Scoring & Decision Boundaries ---
+CLOUD_ANOMALY_THRESHOLD=0.15                     # Cosine distance threshold for cloud anomaly confirmation
+ESCALATION_THRESHOLD=0.15                        # Minimum cloud score to trigger incident creation
+CONFIRMATION_K=5                                 # Number of nearest baseline neighbors to evaluate
+
+# --- Multi-Model Ensemble & Temporal Boosting ---
+ENSEMBLE_CLOUD_WEIGHT=0.7                        # 70% Cloud weight
+ENSEMBLE_EDGE_WEIGHT=0.3                         # 30% Edge weight
+ENSEMBLE_THRESHOLD=0.15                          # Fused ensemble anomaly threshold
+TEMPORAL_BOOST_WINDOW=5.0                        # 5-minute sliding window for consecutive escalations
+TEMPORAL_BOOST_FACTOR=0.1                        # +0.10 score boost per consecutive escalation
+MAX_TEMPORAL_BOOST=0.3                           # Maximum ceiling for temporal boost (+0.30)
+
+# --- Twelve Labs Cloud VLM Engine ---
+TWELVE_LABS_API_KEY="tlk_your_twelve_labs_api_key" # Leave empty to use local PyTorch model server
+TWELVE_LABS_API_URL="https://api.twelvelabs.io/v1.3"
+TWELVE_LABS_MARENGO_INDEX_NAME="dahua-surveillance-marengo"
+TWELVE_LABS_PEGASUS_INDEX_NAME="dahua-surveillance-pegasus"
+TWELVE_LABS_MARENGO_MODEL="marengo2.7"
+TWELVE_LABS_PEGASUS_MODEL="pegasus1.5"
+TWELVE_LABS_UPLOAD_TIMEOUT=600                   # Video task processing timeout in seconds
+TWELVE_LABS_MAX_CLIPS=10                         # Default maximum search clips returned
+```
+
+---
+
+### Step 3.4: Verification & Testing Playbook
+
+Follow these steps to verify and test the Cloud Analytics Tier, Qdrant Baseline, and Twelve Labs integration.
+
+#### 1. Start Support Daemons & Services:
+```bash
+# Terminal 1: Launch Local Qdrant Vector Cluster
+docker run -d --name qdrant-central -p 6333:6333 -p 6334:6334 qdrant/qdrant:latest
+
+# Terminal 2: Start Local PyTorch Model Server Fallback
+uv run python model_server.py --port 9877
+
+# Terminal 3: Start Central Cloud Analytics FastAPI Backend
+uv run uvicorn backend.main:app --host 0.0.0.0 --port 9876 --reload
+```
+
+#### 2. Run the Automated Backend & Integration Test Suite:
+```bash
+# Run Central Backend API, Qdrant Anomaly Scoring, Ensemble, and Twelve Labs client tests
+uv run pytest tests/test_backend_api.py tests/test_backend_anomaly.py tests/test_backend_ensemble.py tests/test_twelvelabs_client.py tests/test_model_server.py -v
+```
+
+#### 3. Health & Readiness Verification via CLI:
+```bash
+# 1. Verify Health Matrix across Qdrant, Model Server, Twelve Labs, and 9 Camera Channels
+curl -s http://localhost:9876/health | jq .
+
+# Expected Output:
+# {
+#   "status": "ok",
+#   "qdrant_connected": true,
+#   "model_loaded": true,
+#   "twelve_labs_enabled": true,
+#   "edge_devices_count": 9,
+#   "uptime_s": 12.4
+# }
+
+# 2. Check Twelve Labs Index Configuration
+curl -s http://localhost:9876/api/v1/twelvelabs/status | jq .
+
+# 3. Check 9-Channel Camera Catalog
+curl -s http://localhost:9876/api/v1/cameras | jq .
+```
+
+#### 4. Baseline Indexing & Anomaly Scoring CLI Tests:
+```bash
+# 1. Upsert Normal Baseline Vectors into Central Qdrant (Channel 1: Front Door)
+curl -X POST http://localhost:9876/api/v1/baseline/index \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vectors": [[1.0, 0.0, 0.0, 0.0], [0.98, 0.02, 0.0, 0.0]],
+    "metadata": [
+      {"camera_id": "cam-1", "scene_id": "front_door_day"},
+      {"camera_id": "cam-1", "scene_id": "front_door_day"}
+    ]
+  }' | jq .
+
+# 2. Score a Normal Embedding Vector (Expect Anomaly Score ~ 0.0, is_anomaly: false)
+curl -X POST http://localhost:9876/api/v1/score \
+  -H "Content-Type: application/json" \
+  -d '{
+    "embedding": [1.0, 0.0, 0.0, 0.0],
+    "camera_id": "cam-1",
+    "k": 2
+  }' | jq .
+
+# 3. Score an Anomalous Embedding Vector (Expect Anomaly Score ~ 1.0, is_anomaly: true)
+curl -X POST http://localhost:9876/api/v1/score \
+  -H "Content-Type: application/json" \
+  -d '{
+    "embedding": [0.0, 1.0, 0.0, 0.0],
+    "camera_id": "cam-1",
+    "k": 2
+  }' | jq .
+
+# 4. Simulate Edge Escalation with Multi-Model Ensemble Fusion
+curl -X POST http://localhost:9876/api/v1/escalate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "edge_device_id": "cam-1",
+    "edge_score": 0.22,
+    "edge_embedding": [0.0, 1.0, 0.0, 0.0],
+    "timestamp_ms": 1710000000000,
+    "scene_id": "front_door_day",
+    "camera_id": "cam-1",
+    "channel": 1
+  }' | jq .
+
+# 5. Query Twelve Labs Semantic Video Search (When TWELVE_LABS_API_KEY is configured)
+curl -X POST http://localhost:9876/api/v1/search \
+  -d "query=person approaching porch carrying box" \
+  -d "max_clips=5" | jq .
+```
+
+---
+
+## 4. Systematic Phase-by-Phase Roadmap
 
 ### Phase 1: Direct HTTP Ingestion & Core Infrastructure
 - **1.1 Workspace & Dependencies**: Set up `uv`, `pyproject.toml`, `.env.example`, Docker Compose definitions with OpenCV and HTTP video support.
@@ -198,7 +427,7 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 
 ---
 
-## 4. Master Task Checklist & Progress Tracker
+## 5. Master Task Checklist & Progress Tracker
 
 ### Overall Progress: `13 / 30 Tasks Completed (43.3%)`
 
@@ -261,27 +490,24 @@ This utility tests HTTP connection latency, validates frame resolution and frame
 
 ---
 
-## 5. Verification & Testing Strategy
+## 6. Verification & Testing Strategy
 
-### 5.1 Automated Component Tests
+### 6.1 Automated Component Tests
 ```bash
 # 1. Test Dahua Direct HTTP stream acquisition and frame buffer
-pytest tests/test_dahua_http_stream.py
+uv run pytest tests/test_stream_worker.py tests/test_capture_manager.py
 
-# 2. Test Qdrant Edge two-shard dual query and scoring
-pytest tests/test_qdrant_edge.py
+# 2. Test Edge Model Extractor, ONNX acceleration & Qdrant Edge two-shard scorer
+uv run pytest tests/test_model.py tests/test_detector.py tests/test_queue.py
 
-# 3. Test multi-model ensemble and temporal boosting logic
-pytest tests/test_ensemble.py
+# 3. Test Central Cloud API, Qdrant Baseline, Multi-Model Ensemble & Twelve Labs
+uv run pytest tests/test_backend_api.py tests/test_backend_anomaly.py tests/test_backend_ensemble.py tests/test_backend_escalation.py tests/test_twelvelabs_client.py tests/test_model_server.py
 
-# 4. Test incident builder hysteresis and cooldown merging
-pytest tests/test_incidents.py
-
-# 5. Test memory governor quarantine and scrub functions
-pytest tests/test_governor.py
+# 4. Full Workspace Test Suite (all 60+ unit & integration tests)
+uv run pytest tests/
 ```
 
-### 5.2 End-to-End Manual Verification
+### 6.2 End-to-End Manual Verification
 1. **Multi-Camera HTTP Ingest**: Stream 9 Dahua HTTP feeds simultaneously; verify sub-second startup, steady 25 FPS frame intake, and zero packet loss in the Edge Worker.
 2. **Anomaly Detection & Escalation**: Inject simulated intrusion; verify edge triage escalates clip, cloud confirms, VLM generates description, and UI triggers audible alert.
 3. **Offline Resilience**: Disconnect internet during activity; verify clips queue locally on disk in SQLite and flush to cloud when reconnected.

@@ -44,7 +44,7 @@ class BackendConfig(BaseSettings):
     marengo_index_name: str = os.getenv("TWELVE_LABS_MARENGO_INDEX_NAME", "dahua-surveillance-marengo")
     pegasus_index_name: str = os.getenv("TWELVE_LABS_PEGASUS_INDEX_NAME", "dahua-surveillance-pegasus")
     marengo_model: str = os.getenv("TWELVE_LABS_MARENGO_MODEL", "marengo2.7")
-    pegasus_model: str = os.getenv("TWELVE_LABS_PEGASUS_MODEL", "pegasus1.2")
+    pegasus_model: str = os.getenv("TWELVE_LABS_PEGASUS_MODEL", "pegasus1.5")
     twelve_labs_upload_timeout: int = int(os.getenv("TWELVE_LABS_UPLOAD_TIMEOUT", "600"))
     twelve_labs_max_clips: int = int(os.getenv("TWELVE_LABS_MAX_CLIPS", "10"))
 
