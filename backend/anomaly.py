@@ -92,9 +92,10 @@ class InMemoryCentralBaselineIndex:
                 if norm > 0:
                     v = v / norm
                 self._vectors.append(v)
-                meta = metadata_list[i] if metadata_list and i < len(metadata_list) else {}
+                raw_meta = metadata_list[i] if metadata_list and i < len(metadata_list) else {}
+                meta = dict(raw_meta)
                 if "id" not in meta:
-                    meta["id"] = str(uuid.uuid4())[:8]
+                    meta["id"] = str(uuid.uuid4())
                 self._metadata.append(meta)
             return len(self._vectors)
 
@@ -174,6 +175,7 @@ def get_qdrant():
                         url=config.qdrant_url,
                         api_key=config.qdrant_api_key,
                         timeout=5.0,
+                        prefer_grpc=False,
                     )
                     # Verify connectivity
                     _qdrant.get_collections()
@@ -224,13 +226,27 @@ def index_baseline_vectors(
 
         points = []
         for i, vec in enumerate(vectors):
-            meta = metadata_list[i] if metadata_list and i < len(metadata_list) else {}
-            pid = meta.get("id") or str(uuid.uuid4())
+            raw_meta = metadata_list[i] if metadata_list and i < len(metadata_list) else {}
+            meta = dict(raw_meta)
+            raw_id = meta.get("id")
+            if raw_id is not None:
+                try:
+                    if isinstance(raw_id, int) and raw_id >= 0:
+                        pid = raw_id
+                    else:
+                        uuid.UUID(str(raw_id))
+                        pid = str(raw_id)
+                except (ValueError, AttributeError):
+                    pid = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(raw_id)))
+            else:
+                pid = str(uuid.uuid4())
+                meta["id"] = pid
             points.append(PointStruct(id=pid, vector=vec, payload=meta))
 
         client.upsert(collection_name=coll, points=points)
         info = client.get_collection(coll)
-        return info.points_count or len(points)
+        points_count = getattr(info, "points_count", None)
+        return points_count if points_count is not None else len(points)
     except Exception as exc:
         logger.warning("Failed to upsert to Qdrant (%s), using in-memory baseline.", exc)
         return _in_memory_index.count()
@@ -343,10 +359,12 @@ def get_collection_stats(collection_name: Optional[str] = None) -> Dict[str, Any
     if client is not None:
         try:
             info = client.get_collection(coll)
+            points_count = getattr(info, "points_count", 0)
+            vectors_count = getattr(info, "indexed_vectors_count", points_count)
             return {
                 "collection": coll,
-                "points_count": info.points_count,
-                "vectors_count": info.vectors_count,
+                "points_count": points_count,
+                "vectors_count": vectors_count,
                 "status": getattr(info.status, "value", str(info.status)),
                 "storage_backend": "qdrant_cluster",
             }

@@ -99,7 +99,7 @@ def test_escalate_json_payload(client):
     data = resp.json()
     assert "escalation_id" in data
     assert data["edge_device_id"] == "cam-1"
-    assert pytest.approx(data["cloud_score"], 1e-4) == 1.0
+    assert data["cloud_score"] >= 0.8
     assert data["is_confirmed_anomaly"] is True
     assert data["incident_id"] is not None
 

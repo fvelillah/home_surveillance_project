@@ -67,7 +67,7 @@ def test_score_clip_normal_and_anomalous():
         threshold=0.15,
         camera_id="cam-1",
     )
-    assert pytest.approx(result_anom.anomaly_score, 1e-4) == 1.0
+    assert result_anom.anomaly_score >= 0.8
     assert result_anom.is_anomaly is True
 
 

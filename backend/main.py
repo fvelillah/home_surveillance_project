@@ -109,7 +109,7 @@ async def health():
 
 @app.post("/api/v1/score", response_model=AnomalyResultResponse)
 @app.post("/api/score", response_model=AnomalyResultResponse)
-async def score_embedding_endpoint(req: EmbedRequest):
+def score_embedding_endpoint(req: EmbedRequest):
     """Scores a pre-computed embedding vector against the central Qdrant baseline."""
     t0 = time.perf_counter()
     result = score_clip(
@@ -139,7 +139,7 @@ async def score_embedding_endpoint(req: EmbedRequest):
 
 
 @app.post("/api/v1/baseline/index")
-async def index_baseline_endpoint(req: BaselineIndexRequest):
+def index_baseline_endpoint(req: BaselineIndexRequest):
     """Upserts baseline calibration embeddings into Central Qdrant."""
     total_indexed = index_baseline_vectors(
         vectors=req.vectors,
@@ -155,7 +155,7 @@ async def index_baseline_endpoint(req: BaselineIndexRequest):
 
 @app.get("/api/v1/qdrant/stats")
 @app.get("/api/qdrant/stats")
-async def qdrant_stats_endpoint():
+def qdrant_stats_endpoint():
     """Returns point counts and vector metadata from the baseline collection."""
     return get_collection_stats()
 
@@ -339,7 +339,7 @@ async def list_cameras():
 
 @app.post("/api/v1/search", response_model=Dict[str, Any])
 @app.post("/api/search", response_model=Dict[str, Any])
-async def search_endpoint(query: str = Form(...), max_clips: int = Form(10)):
+def search_endpoint(query: str = Form(...), max_clips: int = Form(10)):
     """Executes semantic natural-language video search via Twelve Labs Marengo."""
     if not twelvelabs_client.is_enabled():
         raise HTTPException(503, "TWELVE_LABS_API_KEY is not configured")
@@ -367,7 +367,7 @@ async def search_endpoint(query: str = Form(...), max_clips: int = Form(10)):
 
 @app.post("/api/v1/analyze", response_model=AnalysisResultModel)
 @app.post("/api/analyze", response_model=AnalysisResultModel)
-async def analyze_endpoint(video_id: str = Form(...), prompt: str = Form(...)):
+def analyze_endpoint(video_id: str = Form(...), prompt: str = Form(...)):
     """Generates structured incident explanations and answers surveillance questions via Pegasus."""
     if not twelvelabs_client.is_enabled():
         raise HTTPException(503, "TWELVE_LABS_API_KEY is not configured")
@@ -381,6 +381,28 @@ async def analyze_endpoint(video_id: str = Form(...), prompt: str = Form(...)):
         )
     except Exception as exc:
         raise HTTPException(500, f"Pegasus analysis failed: {exc}")
+
+
+@app.post("/api/v1/embed/text")
+@app.post("/api/embed/text")
+def embed_text_endpoint(text: str = Form(...)):
+    """Generates high-dimensional embedding vector for query text via Twelve Labs Marengo."""
+    if not twelvelabs_client.is_enabled():
+        raise HTTPException(503, "TWELVE_LABS_API_KEY is not configured")
+
+    t0 = time.perf_counter()
+    emb = twelvelabs_client.create_text_embedding(text)
+    if emb is None:
+        raise HTTPException(500, "Failed to extract embedding from Marengo")
+    latency_ms = (time.perf_counter() - t0) * 1000
+
+    return {
+        "model": config.marengo_model,
+        "text": text,
+        "dim": len(emb),
+        "embedding_preview": emb[:5],
+        "latency_ms": latency_ms,
+    }
 
 
 @app.get("/api/v1/twelvelabs/status")

@@ -275,8 +275,8 @@ TWELVE_LABS_API_KEY="tlk_your_twelve_labs_api_key" # Leave empty to use local Py
 TWELVE_LABS_API_URL="https://api.twelvelabs.io/v1.3"
 TWELVE_LABS_MARENGO_INDEX_NAME="dahua-surveillance-marengo"
 TWELVE_LABS_PEGASUS_INDEX_NAME="dahua-surveillance-pegasus"
-TWELVE_LABS_MARENGO_MODEL="marengo2.7"
-TWELVE_LABS_PEGASUS_MODEL="pegasus1.5"
+TWELVE_LABS_MARENGO_MODEL="marengo3.0"
+TWELVE_LABS_PEGASUS_MODEL="pegasus1.2"
 TWELVE_LABS_UPLOAD_TIMEOUT=600                   # Video task processing timeout in seconds
 TWELVE_LABS_MAX_CLIPS=10                         # Default maximum search clips returned
 ```
@@ -371,7 +371,26 @@ curl -X POST http://localhost:9876/api/v1/escalate \
     "channel": 1
   }' | jq .
 
-# 5. Query Twelve Labs Semantic Video Search (When TWELVE_LABS_API_KEY is configured)
+# 5. Extract & Inspect Twelve Labs Marengo 3.0 Model Embeddings (1024-dim Vector)
+uv run python -c "
+from twelvelabs import TwelveLabs
+from backend.config import config
+
+client = TwelveLabs(api_key=config.twelve_labs_api_key)
+res = client.embed.create(
+    model_name=config.marengo_model,
+    text='person approaching porch carrying box'
+)
+seg = res.text_embedding.segments[0]
+vec = getattr(seg, 'float_', getattr(seg, 'values', []))
+print(f'Model: {config.marengo_model} | Vector Dim: {len(vec)} | First 5 values: {vec[:5]}')
+"
+
+# 6. Extract Marengo Model Embedding via Central Cloud API Endpoint
+curl -X POST http://localhost:9876/api/v1/embed/text \
+  -d "text=person approaching porch carrying box" | jq .
+
+# 7. Query Twelve Labs Semantic Video Search (When TWELVE_LABS_API_KEY is configured)
 curl -X POST http://localhost:9876/api/v1/search \
   -d "query=person approaching porch carrying box" \
   -d "max_clips=5" | jq .

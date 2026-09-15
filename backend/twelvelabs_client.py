@@ -69,21 +69,38 @@ def get_client():
 def _ensure_index(index_name: str, models: List[Dict[str, Any]]) -> str:
     """Gets an existing index by name or creates a new one, returning its index ID."""
     client = get_client()
-    try:
-        indexes = client.index.list()
-        for idx in indexes:
-            if idx.name == index_name:
-                return idx.id
-    except Exception as exc:
-        logger.warning("Failed to list Twelve Labs indexes: %s", exc)
+    idx_service = getattr(client, "indexes", getattr(client, "index", None))
+    if idx_service is not None:
+        try:
+            indexes = idx_service.list()
+            for idx in indexes:
+                name = getattr(idx, "index_name", getattr(idx, "name", None))
+                if name == index_name:
+                    return idx.id
+        except Exception as exc:
+            logger.warning("Failed to list Twelve Labs indexes: %s", exc)
 
-    # Create new index
-    idx = client.index.create(
-        name=index_name,
-        models=models,
-    )
-    logger.info("Created Twelve Labs index '%s' (id=%s)", index_name, idx.id)
-    return idx.id
+        # Format model specification
+        formatted_models = []
+        for m in models:
+            m_name = m.get("model_name") or m.get("name")
+            m_opts = m.get("model_options") or m.get("options") or ["visual", "audio"]
+            formatted_models.append({"model_name": m_name, "model_options": m_opts})
+
+        # Create new index
+        try:
+            idx = idx_service.create(
+                index_name=index_name,
+                models=formatted_models,
+            )
+        except Exception:
+            idx = idx_service.create(
+                name=index_name,
+                models=models,
+            )
+        logger.info("Created Twelve Labs index '%s' (id=%s)", index_name, idx.id)
+        return idx.id
+    raise RuntimeError("TwelveLabs client has no indexes service")
 
 
 def get_marengo_index_id() -> str:
@@ -92,7 +109,7 @@ def get_marengo_index_id() -> str:
     if _marengo_index_id is None:
         _marengo_index_id = _ensure_index(
             config.marengo_index_name,
-            [{"name": config.marengo_model, "options": ["visual", "audio"]}],
+            [{"model_name": config.marengo_model, "model_options": ["visual", "audio"]}],
         )
     return _marengo_index_id
 
@@ -103,7 +120,7 @@ def get_pegasus_index_id() -> str:
     if _pegasus_index_id is None:
         _pegasus_index_id = _ensure_index(
             config.pegasus_index_name,
-            [{"name": config.pegasus_model, "options": ["visual", "audio"]}],
+            [{"model_name": config.pegasus_model, "model_options": ["visual", "audio"]}],
         )
     return _pegasus_index_id
 
@@ -126,11 +143,12 @@ def upload_video(file_path: str | Path, index_type: str = "both") -> Dict[str, s
     client = get_client()
     result: Dict[str, str] = {}
     path_str = str(file_path)
+    task_service = getattr(client, "tasks", getattr(client, "task", None))
 
     if index_type in ("marengo", "both"):
         try:
             idx_id = get_marengo_index_id()
-            task = client.task.create(
+            task = task_service.create(
                 index_id=idx_id,
                 file=path_str,
             )
@@ -146,7 +164,7 @@ def upload_video(file_path: str | Path, index_type: str = "both") -> Dict[str, s
     if index_type in ("pegasus", "both"):
         try:
             idx_id = get_pegasus_index_id()
-            task = client.task.create(
+            task = task_service.create(
                 index_id=idx_id,
                 file=path_str,
             )
@@ -231,4 +249,20 @@ def get_video_embedding(video_id: str) -> Optional[List[float]]:
             return response.video_embedding.values
     except Exception as exc:
         logger.warning("Failed to retrieve Marengo embedding for video %s: %s", video_id, exc)
+    return None
+
+
+def create_text_embedding(text: str) -> Optional[List[float]]:
+    """Retrieves high-dimensional text embedding vector from Twelve Labs Marengo."""
+    client = get_client()
+    try:
+        response = client.embed.create(
+            model_name=config.marengo_model,
+            text=text,
+        )
+        if response.text_embedding and response.text_embedding.segments:
+            seg = response.text_embedding.segments[0]
+            return getattr(seg, "float_", getattr(seg, "values", None))
+    except Exception as exc:
+        logger.warning("Failed to retrieve Marengo text embedding: %s", exc)
     return None
