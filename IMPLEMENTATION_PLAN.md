@@ -426,14 +426,14 @@ curl -X POST http://localhost:9876/api/v1/search \
 - **4.4 Streaming Backpressure & Load Shedding (`backend/streaming.py`)**: Adaptive 4-level load shedding (`NORMAL`, `SCORE_ONLY`, `PASSTHROUGH`, `SHED_LOAD`).
 
 ### Phase 5: Semantic Video Search & AI Security Copilot
-- **5.1 Semantic Video Search (`backend/search.py`)**: Text-to-video search queries across all 9 feeds filtered by camera, date, and severity badge.
-- **5.2 Conversational Security Copilot (`backend/copilot.py`)**: Interactive video Q&A and daily surveillance digest generation grounded in recorded video events.
-- **5.3 Daily Digest & Routine Generator**: Automated daily morning summary of all home activity and flagged incidents.
+- **5.1 Semantic Video Search (`backend/search.py`, `scripts/evaluate_search.py`)**: Multi-modal text-to-video search queries across all 9 feeds filtered by camera, date, and severity badge, with interactive and batch CLI evaluation tool (`scripts/evaluate_search.py`) supporting `data/tests/` discovery and ranking.
+- **5.2 Conversational Security Copilot (`backend/copilot.py`, `scripts/copilot_cli.py`)**: Interactive video Q&A grounded in recorded video events, with full terminal conversational REPL interface (`scripts/copilot_cli.py`) supporting session memory and evidence citations.
+- **5.3 Daily Digest & Routine Generator (`backend/copilot.py`)**: Automated 24-hour daily surveillance summary of all home activity, 9-channel matrix, and flagged incidents.
 
 ### Phase 6: Multi-Camera Web Console & Live UI
 - **6.1 Next.js 14 App Shell (`frontend/`)**: Modern dark-mode layout, glassmorphic styling, and WebSocket state management.
 - **6.2 9-Channel Live Grid (`CameraGrid.tsx`, `CameraPanel.tsx`)**: 3x3 responsive video grid using direct HTTP stream proxies with per-camera live FPS, health, and anomaly score meters.
-- **6.3 Real-Time Alert Queue & Incident Modal (`AlertQueue.tsx`, `IncidentModal.tsx`)**: Live incident cards with VLM summaries, video playback, and normal nearest-neighbor comparison grid.
+- **6.3 Real-Time Alert Queue & Incident Modal (`AlertQueue.tsx`, `ActiveIncidentCard.tsx`)**: Live incident cards with VLM summaries, video playback, and normal nearest-neighbor comparison grid.
 - **6.4 Multi-Feed Continuous Timeline (`ContinuousTimeline.tsx`, `AnomalyMeter.tsx`)**: 24-hour interactive scrub bar and anomaly score heatmap across all 9 feeds.
 - **6.5 Semantic Search & Intelligence Console (`OpsCopilot.tsx`)**: Video query bar, latent space UMAP visualization, and AI copilot drawer.
 
@@ -448,14 +448,14 @@ curl -X POST http://localhost:9876/api/v1/search \
 
 ## 5. Master Task Checklist & Progress Tracker
 
-### Overall Progress: `17 / 30 Tasks Completed (56.7%)`
+### Overall Progress: `20 / 30 Tasks Completed (66.7%)`
 
 ```
 [x] Phase 1: Direct HTTP Ingestion & Core Infrastructure (5/5)
 [x] Phase 2: Edge Triage & Qdrant Edge (4/4)
 [x] Phase 3: Central Backend & High-Precision kNN (4/4)
 [x] Phase 4: Incident Formation & VLM Explainer (4/4)
-[ ] Phase 5: Semantic Search & AI Copilot (0/3)
+[x] Phase 5: Semantic Search & AI Copilot (3/3)
 [ ] Phase 6: Multi-Camera Web Console (0/6)
 [ ] Phase 7: Calibration & Deployment (0/5)
 ```
@@ -483,14 +483,14 @@ curl -X POST http://localhost:9876/api/v1/search \
 
 ### Phase 4: Incident Formation, VLM Scene Understanding & Governance
 - [x] **Task 4.1**: Implement incident formation engine (`backend/incidents.py`) with EMA smoothing, hysteresis thresholds, and cooldown merging.
-- [x] **Task 4.2**: Implement Twelve Labs Pegasus VLM natural-language scene explainer (`backend/vlm_explainer.py`), standalone CLI evaluation tool (`scripts/evaluate_vlm.py`), and test suite (`tests/test_evaluate_vlm_script.py`).
+- [x] **Task 4.2**: Implement Twelve Labs Pegasus VLM natural-language scene explainer (`backend/vlm_explainer.py`), standalone CLI evaluation tool (`scripts/evaluate_vlm.py`), and test suite (`tests/test_vlm_explainer.py`, `tests/test_evaluate_vlm_script.py`).
 - [x] **Task 4.3**: Implement memory governor (`backend/memory.py`) with quarantine buffer, 1-hour aging, 7-day retention scrub, and per-camera caps.
 - [x] **Task 4.4**: Implement streaming backpressure and load-shedding manager (`backend/streaming.py`).
 
 ### Phase 5: Semantic Video Search & AI Security Copilot
-- [ ] **Task 5.1**: Implement multi-modal semantic video search endpoint (`backend/search.py`) combining Marengo queries with Qdrant metadata filters.
-- [ ] **Task 5.2**: Implement conversational surveillance copilot chat engine (`backend/copilot.py`) grounded in video events.
-- [ ] **Task 5.3**: Implement daily surveillance summary digest generator (`backend/copilot.py`).
+- [x] **Task 5.1**: Implement multi-modal semantic video search endpoint (`backend/search.py`), standalone CLI evaluation tool (`scripts/evaluate_search.py`), and test suite (`tests/test_search.py`, `tests/test_evaluate_search_script.py`).
+- [x] **Task 5.2**: Implement conversational surveillance copilot chat engine (`backend/copilot.py`), interactive CLI shell (`scripts/copilot_cli.py`), and test suite (`tests/test_copilot.py`, `tests/test_copilot_cli_script.py`).
+- [x] **Task 5.3**: Implement daily surveillance summary digest generator (`backend/copilot.py`).
 
 ### Phase 6: Multi-Camera Web Console & Live UI
 - [ ] **Task 6.1**: Setup Next.js 14 project shell, dark mode theme, and global state (`AppContext.tsx`, `CameraContext.tsx`).
@@ -513,21 +513,45 @@ curl -X POST http://localhost:9876/api/v1/search \
 
 ### 6.1 Automated Component Tests
 ```bash
-# 1. Test Dahua Direct HTTP stream acquisition and frame buffer
-uv run pytest tests/test_stream_worker.py tests/test_capture_manager.py
+# 1. Phase 1: Dahua Direct HTTP Ingestion, Workers & Segmenter
+uv run pytest tests/test_stream_worker.py tests/test_capture_manager.py tests/test_segmenter.py tests/test_simulator.py
 
-# 2. Test Edge Model Extractor, ONNX acceleration & Qdrant Edge two-shard scorer
-uv run pytest tests/test_model.py tests/test_detector.py tests/test_queue.py
+# 2. Phase 2: Edge Model Extractor, ONNX acceleration, SQLite Queue & Qdrant Edge
+uv run pytest tests/test_model.py tests/test_detector.py tests/test_queue.py tests/test_edge_api.py
 
-# 3. Test Central Cloud API, Qdrant Baseline, Multi-Model Ensemble & Twelve Labs
+# 3. Phase 3: Central Cloud API, Qdrant Baseline, Multi-Model Ensemble & Twelve Labs
 uv run pytest tests/test_backend_api.py tests/test_backend_anomaly.py tests/test_backend_ensemble.py tests/test_backend_escalation.py tests/test_twelvelabs_client.py tests/test_model_server.py
 
-# 4. Full Workspace Test Suite (all 60+ unit & integration tests)
-uv run pytest tests/
+# 4. Phase 4: Incident Formation, Pegasus VLM Explainer & CLI, Memory Governor & Streaming
+uv run pytest tests/test_backend_incidents.py tests/test_vlm_explainer.py tests/test_evaluate_vlm_script.py tests/test_memory_governor.py tests/test_streaming_backpressure.py
+
+# 5. Phase 5: Semantic Video Search, Conversational Copilot & CLI Evaluation Suite
+uv run pytest tests/test_search.py tests/test_evaluate_search_script.py tests/test_copilot.py tests/test_copilot_cli_script.py
+
+# 6. Full Workspace Test Suite (all 123+ unit & integration tests)
+uv run pytest
 ```
 
-### 6.2 End-to-End Manual Verification
+### 6.2 Standalone CLI Evaluation Tools Playbook
+```bash
+# 1. Evaluate Twelve Labs Pegasus VLM Scene Explainer
+uv run python scripts/evaluate_vlm.py --video data/tests/video_test.mp4
+uv run python scripts/evaluate_vlm.py --generate-sample --mock
+
+# 2. Evaluate Semantic Video Search Engine & Clip Matching
+uv run python scripts/evaluate_search.py --query "person window tool"
+uv run python scripts/evaluate_search.py --interactive
+uv run python scripts/evaluate_search.py --query "delivery" --channel 1 --mock
+
+# 3. Evaluate AI Security Copilot & 24-Hour Daily Digest
+uv run python scripts/copilot_cli.py
+uv run python scripts/copilot_cli.py --query "Who was near the window with a tool?"
+uv run python scripts/copilot_cli.py --digest
+uv run python scripts/copilot_cli.py --digest -o data/storage/daily_digest.md
+```
+
+### 6.3 End-to-End Manual Verification
 1. **Multi-Camera HTTP Ingest**: Stream 9 Dahua HTTP feeds simultaneously; verify sub-second startup, steady 25 FPS frame intake, and zero packet loss in the Edge Worker.
 2. **Anomaly Detection & Escalation**: Inject simulated intrusion; verify edge triage escalates clip, cloud confirms, VLM generates description, and UI triggers audible alert.
 3. **Offline Resilience**: Disconnect internet during activity; verify clips queue locally on disk in SQLite and flush to cloud when reconnected.
-4. **Natural Language Search**: Query historical footage with natural-language text ("package delivered to porch") and verify matched video segments.
+4. **Natural Language Search & Copilot**: Query historical footage with natural-language text ("person striking window") and verify matched video segments and AI conversational citations.

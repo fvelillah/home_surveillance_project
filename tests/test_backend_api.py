@@ -1,6 +1,7 @@
 """Integration tests for Central Cloud FastAPI endpoints."""
 
 import json
+import time
 from unittest.mock import MagicMock, patch
 import pytest
 from starlette.testclient import TestClient
@@ -9,6 +10,8 @@ from backend.main import app
 from backend.anomaly import index_baseline_vectors
 from backend.config import config
 from backend.escalation import tracker
+from backend.incidents import incident_engine
+from backend.models import VLMExplanation
 
 
 @pytest.fixture
@@ -309,4 +312,95 @@ def test_streaming_backpressure_api(client):
     )
     assert resp_auto.status_code == 200
     assert resp_auto.json()["auto_mode"] is True
+
+
+def test_semantic_search_api(client):
+    # Process an incident
+    inc = incident_engine.process_escalation(
+        channel=1,
+        camera_id="cam-1",
+        camera_name="Front Door",
+        edge_score=0.40,
+        cloud_score=0.45,
+        ensemble_score=0.42,
+        timestamp=time.time(),
+    )
+    incident_engine.attach_vlm_explanation(
+        inc.incident_id,
+        VLMExplanation(
+            summary="Delivery courier leaves parcel at front door.",
+            actors=["delivery courier"],
+            action="leaving parcel",
+            objects=["parcel"],
+            risk_assessment="routine",
+            recommended_action="None",
+        ),
+    )
+
+    resp = client.post(
+        "/api/v1/search/semantic",
+        json={
+            "query": "parcel delivery",
+            "channel": 1,
+            "limit": 10,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_matches"] >= 1
+    assert data["results"][0]["incident_id"] == inc.incident_id
+    assert data["results"][0]["channel"] == 1
+
+
+def test_copilot_chat_and_history_api(client):
+    session_id = "test-api-session"
+
+    # Chat turn 1
+    resp = client.post(
+        "/api/v1/copilot/chat",
+        json={
+            "message": "Is there any motion at the front door?",
+            "session_id": session_id,
+        },
+    )
+    assert resp.status_code == 200
+    chat_data = resp.json()
+    assert chat_data["session_id"] == session_id
+    assert "response" in chat_data
+
+    # Check history
+    resp_hist = client.get(f"/api/v1/copilot/history/{session_id}")
+    assert resp_hist.status_code == 200
+    hist = resp_hist.json()
+    assert len(hist) == 2
+
+    # Delete history
+    resp_del = client.delete(f"/api/v1/copilot/history/{session_id}")
+    assert resp_del.status_code == 200
+    assert resp_del.json()["deleted"] is True
+
+    # Check history is now empty
+    resp_hist2 = client.get(f"/api/v1/copilot/history/{session_id}")
+    assert resp_hist2.status_code == 200
+    assert len(resp_hist2.json()) == 0
+
+
+def test_daily_digest_api(client):
+    # Get 24h daily digest
+    resp = client.get("/api/v1/digest/daily")
+    assert resp.status_code == 200
+    digest = resp.json()
+    assert "digest_id" in digest
+    assert "threat_level" in digest
+    assert "executive_summary" in digest
+    assert "markdown_text" in digest
+    assert len(digest["channel_summaries"]) == 9
+
+    # Get quick summary endpoint
+    resp_sum = client.get("/api/v1/digest/summary")
+    assert resp_sum.status_code == 200
+    sum_data = resp_sum.json()
+    assert "threat_level" in sum_data
+    assert "executive_summary" in sum_data
+
 

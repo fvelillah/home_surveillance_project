@@ -58,6 +58,31 @@ def test_search_videos_mocked():
         assert results[0].start == 12.0
 
 
+def test_search_videos_syncpager_mocked():
+    """Tests Twelve Labs SDK v1.3+ SyncPager direct SearchItem iteration."""
+    mock_client = MagicMock()
+    mock_item = MagicMock(spec=["video_id", "score", "start", "end", "confidence"])
+    mock_item.video_id = "idx_asset_777"
+    mock_item.score = 0.94
+    mock_item.start = 3.5
+    mock_item.end = 9.0
+    mock_item.confidence = "high"
+    mock_item.clips = None
+
+    # Simulates SyncPager iterator (without .data attribute)
+    mock_pager = [mock_item]
+    mock_client.search.query.return_value = mock_pager
+
+    with patch.object(twelvelabs_client, "get_client", return_value=mock_client), \
+         patch.object(twelvelabs_client, "get_marengo_index_id", return_value="idx_123"):
+
+        results = twelvelabs_client.search_videos(query="delivery courier", max_clips=5)
+        assert len(results) == 1
+        assert results[0].video_id == "idx_asset_777"
+        assert results[0].score == 0.94
+        assert results[0].start == 3.5
+
+
 def test_analyze_video_pegasus_stream():
     """Tests Pegasus 1.5 analyze_stream handling matching official Twelve Labs starter code."""
     mock_client = MagicMock(spec=["analyze_stream", "search", "embed"])
@@ -106,6 +131,7 @@ def test_upload_video_direct_asset_success(tmp_path):
     fake_video.write_bytes(b"dummy mp4 video bytes")
 
     mock_client = MagicMock()
+    mock_client.assets.list.return_value = []
     mock_asset = MagicMock(id="ast_test_999")
     mock_client.assets.create.return_value = mock_asset
 
@@ -114,7 +140,8 @@ def test_upload_video_direct_asset_success(tmp_path):
     asset_ready = MagicMock(status="ready")
     mock_client.assets.retrieve.side_effect = [asset_pending, asset_ready]
 
-    with patch.object(twelvelabs_client, "get_client", return_value=mock_client):
+    with patch.object(twelvelabs_client, "get_client", return_value=mock_client), \
+         patch.object(twelvelabs_client, "_load_asset_cache", return_value={}):
         res = twelvelabs_client.upload_video(file_path=fake_video)
         assert res["pegasus_video_id"] == "ast_test_999"
         assert res["marengo_video_id"] == "ast_test_999"
@@ -125,17 +152,40 @@ def test_upload_video_direct_asset_success(tmp_path):
 def test_upload_video_url_asset_success():
     """Tests URL asset upload method."""
     mock_client = MagicMock()
+    mock_client.assets.list.return_value = []
     mock_asset = MagicMock(id="ast_url_555")
     mock_client.assets.create.return_value = mock_asset
     mock_client.assets.retrieve.return_value = MagicMock(status="ready")
 
-    with patch.object(twelvelabs_client, "get_client", return_value=mock_client):
+    with patch.object(twelvelabs_client, "get_client", return_value=mock_client), \
+         patch.object(twelvelabs_client, "_load_asset_cache", return_value={}):
         res = twelvelabs_client.upload_video(file_path="https://example.com/stream/camera1.mp4")
         assert res["pegasus_video_id"] == "ast_url_555"
         mock_client.assets.create.assert_called_once_with(
             method="url",
             url="https://example.com/stream/camera1.mp4",
+            filename="camera1.mp4",
         )
+
+
+def test_upload_video_deduplication_reused(tmp_path):
+    """Tests that existing ready assets are reused without creating duplicate assets."""
+    fake_video = tmp_path / "test_existing.mp4"
+    fake_video.write_bytes(b"dummy bytes")
+
+    mock_client = MagicMock()
+    mock_existing_asset = MagicMock()
+    mock_existing_asset.id = "ast_cached_123"
+    mock_existing_asset.filename = "test_existing.mp4"
+    mock_existing_asset.status = "ready"
+    mock_client.assets.list.return_value = [mock_existing_asset]
+
+    with patch.object(twelvelabs_client, "get_client", return_value=mock_client), \
+         patch.object(twelvelabs_client, "_load_asset_cache", return_value={}):
+        res = twelvelabs_client.upload_video(file_path=fake_video)
+        assert res["pegasus_video_id"] == "ast_cached_123"
+        # Assets create must NOT be called because it was deduplicated
+        mock_client.assets.create.assert_not_called()
 
 
 def test_upload_video_asset_failure(tmp_path):
@@ -144,11 +194,13 @@ def test_upload_video_asset_failure(tmp_path):
     fake_video.write_bytes(b"corrupt bytes")
 
     mock_client = MagicMock()
+    mock_client.assets.list.return_value = []
     mock_asset = MagicMock(id="ast_fail_111")
     mock_client.assets.create.return_value = mock_asset
     mock_client.assets.retrieve.return_value = MagicMock(status="failed")
 
-    with patch.object(twelvelabs_client, "get_client", return_value=mock_client):
+    with patch.object(twelvelabs_client, "get_client", return_value=mock_client), \
+         patch.object(twelvelabs_client, "_load_asset_cache", return_value={}):
         with pytest.raises(RuntimeError, match="Twelve Labs asset processing failed"):
             twelvelabs_client.upload_video(file_path=fake_video)
 

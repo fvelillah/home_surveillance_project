@@ -72,11 +72,13 @@ def _ensure_index(index_name: str, models: List[Dict[str, Any]]) -> str:
     idx_service = getattr(client, "indexes", getattr(client, "index", None))
     if idx_service is not None:
         try:
-            indexes = idx_service.list()
+            indexes = idx_service.list(page_limit=50)
+            target_norm = index_name.replace("-", "_").lower()
             for idx in indexes:
                 name = getattr(idx, "index_name", getattr(idx, "name", None))
-                if name == index_name:
-                    return idx.id
+                if name:
+                    if name == index_name or name.replace("-", "_").lower() == target_norm:
+                        return idx.id
         except Exception as exc:
             logger.warning("Failed to list Twelve Labs indexes: %s", exc)
 
@@ -119,12 +121,100 @@ def get_pegasus_index_id() -> str:
 
 
 # ---------------------------------------------------------------------------
+# Asset Deduplication Cache & Helpers
+# ---------------------------------------------------------------------------
+
+_ASSET_CACHE: Dict[str, Dict[str, Any]] = {}
+_CACHE_LOADED = False
+
+
+def _get_cache_file() -> Path:
+    return Path("data/storage/twelvelabs_cache.json")
+
+
+def _load_asset_cache() -> Dict[str, Dict[str, Any]]:
+    global _ASSET_CACHE, _CACHE_LOADED
+    if not _CACHE_LOADED:
+        cache_file = _get_cache_file()
+        if cache_file.exists():
+            try:
+                import json
+                data = json.loads(cache_file.read_text(encoding="utf-8"))
+                if isinstance(data, dict):
+                    _ASSET_CACHE = data
+            except Exception as exc:
+                logger.debug("Failed to read Twelve Labs asset cache: %s", exc)
+        _CACHE_LOADED = True
+    return _ASSET_CACHE
+
+
+def _save_asset_cache(key: str, entry: Dict[str, Any]) -> None:
+    global _ASSET_CACHE
+    _ASSET_CACHE[key] = entry
+    try:
+        import json
+        cache_file = _get_cache_file()
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(_ASSET_CACHE, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.debug("Failed to save Twelve Labs asset cache: %s", exc)
+
+
+def find_existing_asset(target_name: str) -> Optional[Dict[str, str]]:
+    """Checks local cache and remote Twelve Labs account to find an existing ready asset ID."""
+    # 1. Local Cache Lookup
+    cache = _load_asset_cache()
+    if target_name in cache:
+        entry = cache[target_name]
+        if entry.get("status") == "ready" and entry.get("asset_id"):
+            return {
+                "asset_id": str(entry["asset_id"]),
+                "marengo_video_id": str(entry.get("marengo_video_id", entry["asset_id"])),
+            }
+
+    # 2. Remote Twelve Labs Lookup
+    if not is_enabled():
+        return None
+
+    try:
+        client = get_client()
+        assets_service = getattr(client, "assets", None)
+        if assets_service and hasattr(assets_service, "list"):
+            try:
+                # Query by filename filter
+                assets_list = assets_service.list(filename=target_name, page_limit=20)
+                for a in assets_list:
+                    if getattr(a, "status", None) == "ready":
+                        fname = getattr(a, "filename", None) or ""
+                        if fname == target_name or (target_name and target_name in fname):
+                            return {"asset_id": str(getattr(a, "id", "")), "marengo_video_id": str(getattr(a, "id", ""))}
+            except Exception:
+                pass
+
+            try:
+                # Fallback scan of recent account assets
+                recent_assets = assets_service.list(page_limit=50)
+                for a in recent_assets:
+                    if getattr(a, "status", None) == "ready":
+                        fname = getattr(a, "filename", None) or ""
+                        if fname == target_name or (target_name and target_name in fname):
+                            return {"asset_id": str(getattr(a, "id", "")), "marengo_video_id": str(getattr(a, "id", ""))}
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.debug("Remote asset deduplication lookup error: %s", exc)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Core Operations: Upload, Search, Analyze, Embed
 # ---------------------------------------------------------------------------
 
 
 def upload_video(file_path: str | Path, index_type: str = "both") -> Dict[str, str]:
-    """Uploads a video clip or URL to Twelve Labs as an asset for Pegasus 1.5 analysis and indexing.
+    """Uploads a video clip or URL to Twelve Labs as an asset for Pegasus 1.5 analysis and Marengo indexing.
+    Reuses existing assets matching the filename to prevent duplicates.
 
     Args:
         file_path: Path to the MP4 video clip or a direct video URL.
@@ -136,6 +226,54 @@ def upload_video(file_path: str | Path, index_type: str = "both") -> Dict[str, s
     client = get_client()
     result: Dict[str, str] = {}
     target_str = str(file_path)
+    target_name = Path(file_path).name if not (target_str.startswith("http://") or target_str.startswith("https://")) else target_str.split("?")[0].split("/")[-1]
+
+    # Check local and remote deduplication before uploading
+    existing = find_existing_asset(target_name)
+    if existing and existing.get("asset_id"):
+        asset_id = existing["asset_id"]
+        logger.info("Found existing Twelve Labs asset for '%s': asset_id=%s. Reusing without re-uploading.", target_name, asset_id)
+        result["pegasus_video_id"] = asset_id
+        result["marengo_video_id"] = existing.get("marengo_video_id", asset_id)
+
+        # Ensure indexed into Marengo if requested
+        if index_type in ("marengo", "both"):
+            try:
+                idx_id = get_marengo_index_id()
+                idx_service = getattr(client, "indexes", getattr(client, "index", None))
+                idx_assets_service = getattr(idx_service, "indexed_assets", None) if idx_service else None
+                if idx_assets_service is not None and hasattr(idx_assets_service, "create"):
+                    already_indexed = False
+                    indexed_asset_id = str(asset_id)
+                    if hasattr(idx_assets_service, "list"):
+                        try:
+                            for item in idx_assets_service.list(index_id=idx_id):
+                                if getattr(item, "asset_id", None) == str(asset_id) or getattr(item, "id", None) == str(asset_id):
+                                    indexed_asset_id = str(getattr(item, "id", asset_id))
+                                    already_indexed = True
+                                    break
+                        except Exception:
+                            pass
+
+                    if not already_indexed:
+                        try:
+                            idx_res = idx_assets_service.create(index_id=idx_id, asset_id=str(asset_id))
+                            indexed_asset_id = str(getattr(idx_res, "id", asset_id) or asset_id)
+                        except Exception as exc:
+                            logger.warning("Failed to index existing asset into Marengo: %s", exc)
+
+                    result["marengo_video_id"] = indexed_asset_id
+            except Exception as exc:
+                logger.warning("Marengo indexing check failed: %s", exc)
+
+        _save_asset_cache(target_name, {
+            "asset_id": asset_id,
+            "marengo_video_id": result.get("marengo_video_id", asset_id),
+            "pegasus_video_id": asset_id,
+            "filename": target_name,
+            "status": "ready",
+        })
+        return result
 
     try:
         # Check if assets service is available (Twelve Labs SDK 1.3+)
@@ -145,6 +283,7 @@ def upload_video(file_path: str | Path, index_type: str = "both") -> Dict[str, s
                 asset = assets_service.create(
                     method="url",
                     url=target_str,
+                    filename=target_name,
                 )
             else:
                 path = Path(file_path)
@@ -154,13 +293,14 @@ def upload_video(file_path: str | Path, index_type: str = "both") -> Dict[str, s
                     asset = assets_service.create(
                         method="direct",
                         file=f,
+                        filename=target_name,
                     )
 
             asset_id = getattr(asset, "id", None) or (asset.get("id") if isinstance(asset, dict) else None)
             if not asset_id:
                 raise RuntimeError("Twelve Labs asset upload did not produce a valid asset ID.")
 
-            logger.info("Created Twelve Labs asset id=%s", asset_id)
+            logger.info("Created Twelve Labs asset id=%s (filename=%s)", asset_id, target_name)
 
             # Polling asset status
             t_start = time.time()
@@ -178,9 +318,72 @@ def upload_video(file_path: str | Path, index_type: str = "both") -> Dict[str, s
 
                 time.sleep(2.0)
 
-            result["marengo_video_id"] = str(asset_id)
             result["pegasus_video_id"] = str(asset_id)
-            logger.info("Successfully uploaded video asset to Twelve Labs: asset_id=%s", asset_id)
+            result["marengo_video_id"] = str(asset_id)
+
+            # In Twelve Labs SDK v1.3+, index the asset into Marengo if requested
+            if index_type in ("marengo", "both"):
+                try:
+                    idx_id = get_marengo_index_id()
+                    idx_service = getattr(client, "indexes", getattr(client, "index", None))
+                    idx_assets_service = getattr(idx_service, "indexed_assets", None) if idx_service else None
+                    if idx_assets_service is not None and hasattr(idx_assets_service, "create"):
+                        # Check if asset is already indexed
+                        already_indexed = False
+                        indexed_asset_id = str(asset_id)
+                        if hasattr(idx_assets_service, "list"):
+                            try:
+                                existing_list = idx_assets_service.list(index_id=idx_id)
+                                for item in existing_list:
+                                    if getattr(item, "asset_id", None) == str(asset_id) or getattr(item, "id", None) == str(asset_id):
+                                        indexed_asset_id = str(getattr(item, "id", asset_id))
+                                        already_indexed = True
+                                        logger.info("Asset %s is already indexed in Marengo index %s", asset_id, idx_id)
+                                        break
+                            except Exception as exc:
+                                logger.debug("Existing indexed assets check skipped: %s", exc)
+
+                        if not already_indexed:
+                            try:
+                                idx_res = idx_assets_service.create(
+                                    index_id=idx_id,
+                                    asset_id=str(asset_id),
+                                )
+                                indexed_asset_id = str(getattr(idx_res, "id", asset_id) or asset_id)
+                                logger.info("Created Marengo indexed asset %s for asset_id=%s in index %s", indexed_asset_id, asset_id, idx_id)
+
+                                # Poll indexing progress if retrieve method exists
+                                if hasattr(idx_assets_service, "retrieve"):
+                                    t_idx_start = time.time()
+                                    while time.time() - t_idx_start < config.twelve_labs_upload_timeout:
+                                        try:
+                                            info = idx_assets_service.retrieve(index_id=idx_id, indexed_asset_id=indexed_asset_id)
+                                            st = getattr(info, "status", None)
+                                            if st == "ready":
+                                                logger.info("Marengo indexed asset %s status is ready", indexed_asset_id)
+                                                break
+                                            if st == "failed":
+                                                logger.warning("Marengo indexing failed for %s", indexed_asset_id)
+                                                break
+                                        except Exception:
+                                            pass
+                                        time.sleep(2.0)
+                            except Exception as exc:
+                                logger.warning("Failed to create Marengo indexed asset: %s", exc)
+
+                        result["marengo_video_id"] = indexed_asset_id
+                except Exception as exc:
+                    logger.warning("Twelve Labs Marengo indexing hook failed: %s", exc)
+
+            _save_asset_cache(target_name, {
+                "asset_id": str(asset_id),
+                "marengo_video_id": result.get("marengo_video_id", str(asset_id)),
+                "pegasus_video_id": str(asset_id),
+                "filename": target_name,
+                "status": "ready",
+            })
+
+            logger.info("Successfully uploaded video asset to Twelve Labs: asset_id=%s, marengo_video_id=%s", asset_id, result.get("marengo_video_id"))
             return result
 
         # Fallback to tasks service for legacy mock/clients
@@ -240,16 +443,49 @@ def search_videos(
     )
 
     results: List[SearchResult] = []
-    for group in getattr(search_results, "data", []):
-        for clip in getattr(group, "clips", []):
+    # search_results may be a SyncPager, iterable, list, or object with .data
+    items_to_process: List[Any] = []
+    if hasattr(search_results, "__iter__") and not isinstance(search_results, (dict, str)):
+        try:
+            items_to_process = list(search_results)
+        except Exception:
+            items_to_process = getattr(search_results, "data", []) or []
+    else:
+        items_to_process = getattr(search_results, "data", []) or []
+
+    for item in items_to_process:
+        clips = getattr(item, "clips", None)
+        if clips:
+            for clip in clips:
+                v_id = str(getattr(clip, "video_id", None) or getattr(item, "video_id", None) or getattr(item, "id", "") or "")
+                raw_score = getattr(clip, "score", None)
+                if raw_score is None:
+                    rank = getattr(clip, "rank", None) or getattr(item, "rank", 1)
+                    raw_score = 1.0 / (float(rank) if isinstance(rank, (int, float)) and rank > 0 else 1.0)
+                results.append(
+                    SearchResult(
+                        video_id=v_id,
+                        score=float(raw_score),
+                        start=float(getattr(clip, "start", 0.0) or 0.0),
+                        end=float(getattr(clip, "end", 0.0) or 0.0),
+                        confidence=str(getattr(clip, "confidence", "") or getattr(item, "confidence", "")),
+                        metadata={"module_type": getattr(clip, "module_type", "visual")},
+                    )
+                )
+        else:
+            v_id = str(getattr(item, "video_id", None) or getattr(item, "id", "") or "")
+            raw_score = getattr(item, "score", None)
+            if raw_score is None:
+                rank = getattr(item, "rank", None)
+                raw_score = 1.0 / (float(rank) if isinstance(rank, (int, float)) and rank > 0 else 1.0) if rank is not None else 0.8
             results.append(
                 SearchResult(
-                    video_id=clip.video_id,
-                    score=clip.score,
-                    start=clip.start,
-                    end=clip.end,
-                    confidence=getattr(clip, "confidence", ""),
-                    metadata={"module_type": getattr(clip, "module_type", "visual")},
+                    video_id=v_id,
+                    score=float(raw_score),
+                    start=float(getattr(item, "start", 0.0) or 0.0),
+                    end=float(getattr(item, "end", 0.0) or 0.0),
+                    confidence=str(getattr(item, "confidence", "") or ""),
+                    metadata={"module_type": getattr(item, "module_type", "visual")},
                 )
             )
     return results

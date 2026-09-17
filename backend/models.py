@@ -280,3 +280,168 @@ class AnalysisResultModel(BaseModel):
     video_id: str
     text: str
     latency_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Semantic Video Search Schemas
+# ---------------------------------------------------------------------------
+
+
+class SemanticSearchRequest(BaseModel):
+    """Query and filter payload for multi-modal video search."""
+    query: str
+    channel: Optional[int] = None
+    camera_id: Optional[str] = None
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    min_severity: Optional[int] = None
+    severity_badge: Optional[str] = None  # LOW | MODERATE | HIGH | CRITICAL
+    status: Optional[str] = None  # OPEN | ACKNOWLEDGED | CLOSED | ARCHIVED
+    limit: int = 20
+    offset: int = 0
+    threshold: str = "medium"  # low | medium | high
+
+
+class SemanticSearchResultItem(BaseModel):
+    """Matched surveillance video/incident item from semantic search."""
+    incident_id: str
+    channel: int
+    camera_id: str
+    camera_name: str
+    score: float
+    confidence: str = "medium"
+    timestamp: float
+    duration_s: float = 0.0
+    severity: int
+    severity_badge: str
+    status: str
+    summary: str
+    actors: List[str] = Field(default_factory=list)
+    action: str = ""
+    objects: List[str] = Field(default_factory=list)
+    snapshot_url: Optional[str] = None
+    clip_url: Optional[str] = None
+    video_id: Optional[str] = None
+    match_reason: str = "semantic_similarity"
+
+
+class SemanticSearchResponse(BaseModel):
+    """Consolidated semantic search results and telemetry."""
+    query: str
+    total_matches: int
+    results: List[SemanticSearchResultItem] = Field(default_factory=list)
+    latency_ms: float = 0.0
+    filters_applied: Dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: AI Security Copilot & Conversational Q&A Schemas
+# ---------------------------------------------------------------------------
+
+
+class CopilotChatRequest(BaseModel):
+    """User message and optional scope constraints for the Security Copilot."""
+    message: str
+    session_id: Optional[str] = None
+    channel: Optional[int] = None
+    camera_id: Optional[str] = None
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+
+
+class CopilotEvidence(BaseModel):
+    """Surveillance event evidence cited by the Copilot in response."""
+    incident_id: str
+    channel: int
+    camera_name: str
+    timestamp: float
+    severity: int
+    severity_badge: str
+    summary: str
+    actors: List[str] = Field(default_factory=list)
+    action: str = ""
+    clip_url: Optional[str] = None
+    snapshot_url: Optional[str] = None
+
+
+class CopilotMessage(BaseModel):
+    """Single turn message in a Copilot conversation."""
+    role: str  # user | assistant | system
+    content: str
+    timestamp: float
+    evidence: List[CopilotEvidence] = Field(default_factory=list)
+
+
+class CopilotChatResponse(BaseModel):
+    """AI Copilot response grounded in video telemetry and incident logs."""
+    response: str
+    session_id: str
+    cited_incidents: List[str] = Field(default_factory=list)
+    evidence: List[CopilotEvidence] = Field(default_factory=list)
+    latency_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Daily Surveillance Summary Digest Schemas
+# ---------------------------------------------------------------------------
+
+
+class DailyDigestRequest(BaseModel):
+    """Request parameters for generating surveillance activity digest."""
+    start_time: Optional[float] = None
+    end_time: Optional[float] = None
+    channel: Optional[int] = None
+    format: str = "full"  # full | executive | markdown
+
+
+class ChannelActivitySummary(BaseModel):
+    """Aggregated activity metrics for a single camera channel."""
+    channel: int
+    camera_id: str
+    camera_name: str
+    total_events: int = 0
+    total_incidents: int = 0
+    peak_severity: int = 0
+    critical_count: int = 0
+    high_count: int = 0
+    moderate_count: int = 0
+    low_count: int = 0
+    summary: str = "No significant anomalous activity detected."
+
+
+class DigestIncidentSummary(BaseModel):
+    """Highlight item for major security incidents in daily digest."""
+    incident_id: str
+    channel: int
+    camera_name: str
+    timestamp: float
+    duration_s: float
+    severity: int
+    severity_badge: str
+    summary: str
+    actors: List[str] = Field(default_factory=list)
+    action: str = ""
+    snapshot_url: Optional[str] = None
+    clip_url: Optional[str] = None
+
+
+class DailyDigestResponse(BaseModel):
+    """Comprehensive daily surveillance report and executive briefing."""
+    digest_id: str
+    period_start: float
+    period_end: float
+    generated_at: float
+    total_incidents: int
+    total_events: int
+    critical_incidents: int
+    high_incidents: int
+    moderate_incidents: int
+    low_incidents: int
+    threat_level: str  # LOW | MODERATE | ELEVATED | SEVERE
+    executive_summary: str
+    channel_summaries: List[ChannelActivitySummary] = Field(default_factory=list)
+    key_incidents: List[DigestIncidentSummary] = Field(default_factory=list)
+    routine_observations: List[str] = Field(default_factory=list)
+    recommended_actions: List[str] = Field(default_factory=list)
+    markdown_text: str = ""
+

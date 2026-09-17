@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .anomaly import get_collection_stats, get_qdrant, index_baseline_vectors, score_clip
 from .config import config
+from .copilot import copilot_engine
 from .edge_registry import registry as edge_registry
 from .ensemble import ensemble_scorer
 from .escalation import EscalationRequest, handle_escalation, tracker as escalation_tracker
@@ -24,6 +25,11 @@ from .models import (
     AnomalyResultResponse,
     BaselineIndexRequest,
     CameraStreamInfo,
+    CopilotChatRequest,
+    CopilotChatResponse,
+    CopilotMessage,
+    DailyDigestRequest,
+    DailyDigestResponse,
     EdgeDeviceModel,
     EdgeRegisterRequest,
     EmbedRequest,
@@ -40,8 +46,12 @@ from .models import (
     QuarantineItemModel,
     QuarantinePromotionRequest,
     SearchResultModel,
+    SemanticSearchRequest,
+    SemanticSearchResponse,
+    SemanticSearchResultItem,
     VLMExplanation,
 )
+from .search import search_engine
 from .streaming import streaming_manager
 from .vlm_explainer import explain_incident
 from . import twelvelabs_client
@@ -588,6 +598,103 @@ def set_streaming_level_endpoint(req: LoadSheddingLevelRequest):
     """Updates load shedding level override (0..3) or toggles automatic mode."""
     streaming_manager.set_level(level=req.level, auto_mode=req.auto_mode)
     return streaming_manager.get_status()
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Semantic Video Search Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/v1/search/semantic", response_model=SemanticSearchResponse)
+@app.post("/api/search/semantic", response_model=SemanticSearchResponse)
+def semantic_search_endpoint(req: SemanticSearchRequest):
+    """Executes multi-modal semantic search combining Marengo visual search with incident metadata filters."""
+    return search_engine.search(
+        query=req.query,
+        channel=req.channel,
+        camera_id=req.camera_id,
+        start_time=req.start_time,
+        end_time=req.end_time,
+        min_severity=req.min_severity,
+        severity_badge=req.severity_badge,
+        status=req.status,
+        limit=req.limit,
+        offset=req.offset,
+        threshold=req.threshold,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Conversational AI Security Copilot Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/v1/copilot/chat", response_model=CopilotChatResponse)
+@app.post("/api/copilot/chat", response_model=CopilotChatResponse)
+def copilot_chat_endpoint(req: CopilotChatRequest):
+    """Engages the AI Security Copilot in a conversational Q&A turn grounded in surveillance events."""
+    return copilot_engine.chat(
+        message=req.message,
+        session_id=req.session_id,
+        channel=req.channel,
+        camera_id=req.camera_id,
+        start_time=req.start_time,
+        end_time=req.end_time,
+    )
+
+
+@app.get("/api/v1/copilot/history/{session_id}", response_model=List[CopilotMessage])
+@app.get("/api/copilot/history/{session_id}", response_model=List[CopilotMessage])
+def copilot_history_endpoint(session_id: str):
+    """Retrieves full conversation turn history for a given Copilot chat session."""
+    return copilot_engine.get_history(session_id)
+
+
+@app.delete("/api/v1/copilot/history/{session_id}")
+@app.delete("/api/copilot/history/{session_id}")
+def copilot_clear_session_endpoint(session_id: str):
+    """Clears conversation message history for a specific session."""
+    deleted = copilot_engine.clear_history(session_id)
+    return {"status": "ok", "session_id": session_id, "deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Daily Surveillance Summary Digest Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/digest/daily", response_model=DailyDigestResponse)
+@app.get("/api/digest/daily", response_model=DailyDigestResponse)
+@app.post("/api/v1/digest/generate", response_model=DailyDigestResponse)
+def daily_digest_endpoint(
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None,
+    channel: Optional[int] = None,
+    format: str = "full",
+):
+    """Generates an executive 24-hour daily surveillance report across all 9 camera channels."""
+    return copilot_engine.generate_daily_digest(
+        start_time=start_time,
+        end_time=end_time,
+        channel=channel,
+        format=format,
+    )
+
+
+@app.get("/api/v1/digest/summary")
+@app.get("/api/digest/summary")
+def digest_summary_endpoint():
+    """Returns compact 24-hour summary telemetry for dashboard metrics cards."""
+    digest = copilot_engine.generate_daily_digest(format="executive")
+    return {
+        "digest_id": digest.digest_id,
+        "threat_level": digest.threat_level,
+        "total_incidents": digest.total_incidents,
+        "critical_incidents": digest.critical_incidents,
+        "high_incidents": digest.high_incidents,
+        "executive_summary": digest.executive_summary,
+        "generated_at": digest.generated_at,
+    }
 
 
 if __name__ == "__main__":
