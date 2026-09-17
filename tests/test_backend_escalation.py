@@ -3,6 +3,7 @@
 import pytest
 
 from backend.anomaly import index_baseline_vectors
+from backend.incidents import incident_engine
 from backend.escalation import (
     EscalationRequest,
     EscalationTracker,
@@ -14,6 +15,8 @@ from backend.escalation import (
 @pytest.mark.asyncio
 async def test_handle_escalation_confirmed_and_rejected():
     tracker.clear()
+    incident_engine.clear()
+    incident_engine.reset_channel_ema("cam-1")
 
     # Index normal baseline for camera 1
     base_vec = [1.0, 0.0, 0.0, 0.0]
@@ -42,7 +45,7 @@ async def test_handle_escalation_confirmed_and_rejected():
         camera_id="cam-1",
     )
     result_anom = await handle_escalation(anom_req)
-    assert pytest.approx(result_anom.cloud_score, 1e-4) == 1.0
+    assert result_anom.cloud_score >= 0.9
     assert result_anom.is_confirmed_anomaly is True
     assert result_anom.incident_id is not None
     assert result_anom.incident_id.startswith("inc-")

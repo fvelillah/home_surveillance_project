@@ -17,6 +17,8 @@ from .config import config
 from .edge_registry import registry as edge_registry
 from .ensemble import ensemble_scorer
 from .escalation import EscalationRequest, handle_escalation, tracker as escalation_tracker
+from .incidents import incident_engine
+from .memory import memory_governor
 from .models import (
     AnalysisResultModel,
     AnomalyResultResponse,
@@ -29,9 +31,19 @@ from .models import (
     EscalationRequestModel,
     EscalationResponseModel,
     HealthResponse,
+    IncidentRecord,
+    IncidentStatusUpdateRequest,
+    LoadSheddingLevelRequest,
+    LoadSheddingStatus,
+    MemoryStatsResponse,
     NeighborResponse,
+    QuarantineItemModel,
+    QuarantinePromotionRequest,
     SearchResultModel,
+    VLMExplanation,
 )
+from .streaming import streaming_manager
+from .vlm_explainer import explain_incident
 from . import twelvelabs_client
 
 logger = logging.getLogger(__name__)
@@ -416,6 +428,166 @@ async def twelvelabs_status():
         "marengo_index": config.marengo_index_name,
         "pegasus_index": config.pegasus_index_name,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Incident Formation & Management Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/incidents", response_model=List[IncidentRecord])
+@app.get("/api/incidents", response_model=List[IncidentRecord])
+def list_incidents_endpoint(
+    channel: Optional[int] = None,
+    status: Optional[str] = None,
+    min_severity: Optional[int] = None,
+    limit: int = 50,
+    offset: int = 0,
+):
+    """Lists consolidated incidents with filtering by channel, status, and severity."""
+    return incident_engine.list_incidents(
+        channel=channel,
+        status=status,
+        min_severity=min_severity,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@app.get("/api/v1/incidents/active", response_model=List[IncidentRecord])
+@app.get("/api/incidents/active", response_model=List[IncidentRecord])
+def active_incidents_endpoint():
+    """Returns currently active (OPEN) incidents across all camera feeds."""
+    return incident_engine.get_active_incidents()
+
+
+@app.get("/api/v1/incidents/{incident_id}", response_model=IncidentRecord)
+@app.get("/api/incidents/{incident_id}", response_model=IncidentRecord)
+def get_incident_endpoint(incident_id: str):
+    """Retrieves single incident details including events timeline and VLM explanation."""
+    inc = incident_engine.get_incident(incident_id)
+    if inc is None:
+        raise HTTPException(404, f"Incident '{incident_id}' not found")
+    return inc
+
+
+@app.post("/api/v1/incidents/{incident_id}/status", response_model=IncidentRecord)
+@app.post("/api/incidents/{incident_id}/status", response_model=IncidentRecord)
+def update_incident_status_endpoint(incident_id: str, req: IncidentStatusUpdateRequest):
+    """Updates incident lifecycle state (OPEN, ACKNOWLEDGED, CLOSED, ARCHIVED) and notes."""
+    inc = incident_engine.update_status(
+        incident_id=incident_id,
+        status=req.status,
+        notes=req.notes,
+    )
+    if inc is None:
+        raise HTTPException(404, f"Incident '{incident_id}' not found")
+    return inc
+
+
+@app.post("/api/v1/incidents/{incident_id}/explain", response_model=IncidentRecord)
+@app.post("/api/incidents/{incident_id}/explain", response_model=IncidentRecord)
+async def explain_incident_endpoint(
+    incident_id: str,
+    video_id: Optional[str] = None,
+    clip_path: Optional[str] = None,
+):
+    """Triggers or regenerates a natural language Pegasus VLM explanation for an existing incident."""
+    inc = incident_engine.get_incident(incident_id)
+    if inc is None:
+        raise HTTPException(404, f"Incident '{incident_id}' not found")
+
+    if not twelvelabs_client.is_enabled():
+        raise HTTPException(503, "Twelve Labs Pegasus VLM is not enabled or configured")
+
+    try:
+        explanation = await explain_incident(incident=inc, video_id=video_id, clip_path=clip_path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except Exception as exc:
+        raise HTTPException(502, f"Pegasus VLM analysis failed: {exc}")
+
+    updated = incident_engine.attach_vlm_explanation(incident_id, explanation)
+    return updated or inc
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Memory Governor & Quarantine Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/memory/quarantine", response_model=List[QuarantineItemModel])
+@app.get("/api/memory/quarantine", response_model=List[QuarantineItemModel])
+def list_quarantine_endpoint(camera_id: Optional[str] = None, status: Optional[str] = None):
+    """Lists candidate normal baseline vectors held in observation quarantine."""
+    return memory_governor.list_quarantine(camera_id=camera_id, status=status)
+
+
+@app.post("/api/v1/memory/quarantine/stage", response_model=Dict[str, Any])
+@app.post("/api/memory/quarantine/stage", response_model=Dict[str, Any])
+def stage_quarantine_endpoint(
+    vector: List[float],
+    camera_id: str,
+    channel: int = 1,
+    anomaly_score: float = 0.0,
+):
+    """Stages a newly proposed normal vector candidate into the 1-hour quarantine buffer."""
+    item, reason = memory_governor.stage_to_quarantine(
+        vector=vector,
+        camera_id=camera_id,
+        channel=channel,
+        anomaly_score=anomaly_score,
+    )
+    if item is None:
+        raise HTTPException(400, f"Candidate vector rejected: {reason}")
+    return {"status": "ok", "message": reason, "item": item.model_dump()}
+
+
+@app.post("/api/v1/memory/quarantine/promote", response_model=Dict[str, Any])
+@app.post("/api/memory/quarantine/promote", response_model=Dict[str, Any])
+def promote_quarantine_endpoint(req: QuarantinePromotionRequest):
+    """Promotes matured or approved quarantined vectors into the active Qdrant baseline."""
+    count = memory_governor.promote_quarantined_vectors(
+        vector_ids=req.vector_ids,
+        camera_id=req.camera_id,
+        force=req.force,
+    )
+    return {"status": "ok", "promoted_count": count}
+
+
+@app.post("/api/v1/memory/scrub", response_model=Dict[str, Any])
+@app.post("/api/memory/scrub", response_model=Dict[str, Any])
+def scrub_retention_endpoint(retention_days: Optional[int] = None):
+    """Performs scheduled retention cleanup of historical vector memory and quarantine."""
+    result = memory_governor.scrub_retention(retention_days=retention_days)
+    return {"status": "ok", **result}
+
+
+@app.get("/api/v1/memory/stats", response_model=MemoryStatsResponse)
+@app.get("/api/memory/stats", response_model=MemoryStatsResponse)
+def memory_stats_endpoint():
+    """Returns memory governor telemetry, per-camera vector counts, and quarantine size."""
+    return memory_governor.get_stats()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Streaming Backpressure & Load Shedding Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/streaming/status", response_model=LoadSheddingStatus)
+@app.get("/api/streaming/status", response_model=LoadSheddingStatus)
+def streaming_status_endpoint():
+    """Returns real-time adaptive streaming backpressure telemetry and active tier."""
+    return streaming_manager.get_status()
+
+
+@app.post("/api/v1/streaming/level", response_model=LoadSheddingStatus)
+@app.post("/api/streaming/level", response_model=LoadSheddingStatus)
+def set_streaming_level_endpoint(req: LoadSheddingLevelRequest):
+    """Updates load shedding level override (0..3) or toggles automatic mode."""
+    streaming_manager.set_level(level=req.level, auto_mode=req.auto_mode)
+    return streaming_manager.get_status()
 
 
 if __name__ == "__main__":

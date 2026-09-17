@@ -59,6 +59,25 @@ class BackendConfig(BaseSettings):
         "1:Front Door,2:Driveway,3:Front Yard,4:Garage,5:Back Patio,6:Backyard,7:Side Alley North,8:Side Alley South,9:Perimeter Gate",
     )
 
+    # Phase 4: Incident Formation & Hysteresis
+    ema_alpha: float = float(os.getenv("EMA_ALPHA", "0.3"))
+    incident_start_threshold: float = float(os.getenv("INCIDENT_START_THRESHOLD", "0.080"))
+    incident_end_threshold: float = float(os.getenv("INCIDENT_END_THRESHOLD", "0.050"))
+    cooldown_window_s: float = float(os.getenv("COOLDOWN_WINDOW_S", "30.0"))
+
+    # Phase 4: Memory Governor & Anti-Poisoning
+    quarantine_collection_name: str = os.getenv("QUARANTINE_COLLECTION_NAME", "anomaly_quarantine")
+    quarantine_duration_s: int = int(os.getenv("QUARANTINE_DURATION_S", "3600"))
+    max_vectors_per_camera: int = int(os.getenv("MAX_VECTORS_PER_CAMERA", "500"))
+    baseline_retention_days: int = int(os.getenv("BASELINE_RETENTION_DAYS", "7"))
+    anti_poisoning_threshold: float = float(os.getenv("ANTI_POISONING_THRESHOLD", "0.080"))
+
+    # Phase 4: Streaming Backpressure & Load Shedding
+    load_shed_auto: bool = os.getenv("LOAD_SHED_AUTO", "true").lower() in ("true", "1", "yes")
+    load_shed_score_only_latency_ms: float = float(os.getenv("LOAD_SHED_SCORE_ONLY_LATENCY_MS", "500.0"))
+    load_shed_passthrough_latency_ms: float = float(os.getenv("LOAD_SHED_PASSTHROUGH_LATENCY_MS", "1500.0"))
+    load_shed_critical_threshold: float = float(os.getenv("LOAD_SHED_CRITICAL_THRESHOLD", "0.25"))
+
     def parse_camera_names(self) -> dict[int, str]:
         """Parses CAMERA_NAMES string into a channel -> name mapping."""
         cameras: dict[int, str] = {}

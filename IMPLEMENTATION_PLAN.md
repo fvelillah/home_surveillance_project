@@ -448,13 +448,13 @@ curl -X POST http://localhost:9876/api/v1/search \
 
 ## 5. Master Task Checklist & Progress Tracker
 
-### Overall Progress: `13 / 30 Tasks Completed (43.3%)`
+### Overall Progress: `17 / 30 Tasks Completed (56.7%)`
 
 ```
 [x] Phase 1: Direct HTTP Ingestion & Core Infrastructure (5/5)
 [x] Phase 2: Edge Triage & Qdrant Edge (4/4)
 [x] Phase 3: Central Backend & High-Precision kNN (4/4)
-[ ] Phase 4: Incident Formation & VLM Explainer (0/4)
+[x] Phase 4: Incident Formation & VLM Explainer (4/4)
 [ ] Phase 5: Semantic Search & AI Copilot (0/3)
 [ ] Phase 6: Multi-Camera Web Console (0/6)
 [ ] Phase 7: Calibration & Deployment (0/5)
@@ -482,10 +482,10 @@ curl -X POST http://localhost:9876/api/v1/search \
 - [x] **Task 3.4**: Implement edge escalation receiver and multi-model ensemble scorer (`backend/escalation.py`, `backend/ensemble.py`) with temporal boosting.
 
 ### Phase 4: Incident Formation, VLM Scene Understanding & Governance
-- [ ] **Task 4.1**: Implement incident formation engine (`backend/incidents.py`) with EMA smoothing, hysteresis thresholds, and cooldown merging.
-- [ ] **Task 4.2**: Implement Twelve Labs Pegasus / Gemini VLM natural-language scene explainer (`backend/vlm_explainer.py`).
-- [ ] **Task 4.3**: Implement memory governor (`backend/memory.py`) with quarantine buffer, 1-hour aging, 7-day retention scrub, and per-camera caps.
-- [ ] **Task 4.4**: Implement streaming backpressure and load-shedding manager (`backend/streaming.py`).
+- [x] **Task 4.1**: Implement incident formation engine (`backend/incidents.py`) with EMA smoothing, hysteresis thresholds, and cooldown merging.
+- [x] **Task 4.2**: Implement Twelve Labs Pegasus / Gemini VLM natural-language scene explainer (`backend/vlm_explainer.py`).
+- [x] **Task 4.3**: Implement memory governor (`backend/memory.py`) with quarantine buffer, 1-hour aging, 7-day retention scrub, and per-camera caps.
+- [x] **Task 4.4**: Implement streaming backpressure and load-shedding manager (`backend/streaming.py`).
 
 ### Phase 5: Semantic Video Search & AI Security Copilot
 - [ ] **Task 5.1**: Implement multi-modal semantic video search endpoint (`backend/search.py`) combining Marengo queries with Qdrant metadata filters.

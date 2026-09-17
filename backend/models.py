@@ -145,6 +145,124 @@ class IncidentResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Phase 4: Incident Formation & VLM Explanation Schemas
+# ---------------------------------------------------------------------------
+
+
+class VLMExplanation(BaseModel):
+    """Structured natural language incident explanation produced by Pegasus/VLM."""
+    summary: str
+    actors: List[str] = Field(default_factory=list)
+    action: str = ""
+    objects: List[str] = Field(default_factory=list)
+    risk_assessment: str = "routine"  # routine | suspicious | hazard | breach
+    recommended_action: str = ""
+    model: str = "pegasus1.2"
+    latency_ms: float = 0.0
+
+
+class IncidentEvent(BaseModel):
+    """Single discrete score/clip observation within a compound incident."""
+    event_id: str
+    timestamp: float
+    edge_score: float
+    cloud_score: float
+    ensemble_score: float
+    smoothed_score: float
+    snapshot_url: Optional[str] = None
+    clip_url: Optional[str] = None
+
+
+class IncidentRecord(BaseModel):
+    """Full lifecycle incident representation managed by IncidentFormationEngine."""
+    incident_id: str
+    channel: int
+    camera_id: str
+    camera_name: str
+    start_time: float
+    end_time: float
+    duration_s: float
+    peak_score: float
+    mean_score: float
+    smoothed_score: float = 0.0
+    severity: int = Field(ge=0, le=100)
+    severity_badge: str = "LOW"  # LOW | MODERATE | HIGH | CRITICAL
+    status: str = "OPEN"  # OPEN | ACKNOWLEDGED | CLOSED | ARCHIVED
+    event_count: int = 1
+    events: List[IncidentEvent] = Field(default_factory=list)
+    vlm_explanation: Optional[VLMExplanation] = None
+    snapshot_url: Optional[str] = None
+    clip_url: Optional[str] = None
+    scene_id: str = ""
+    created_at: float
+    updated_at: float
+    notes: Optional[str] = None
+
+
+class IncidentStatusUpdateRequest(BaseModel):
+    """Request payload to change incident status or add operator notes."""
+    status: str  # OPEN | ACKNOWLEDGED | CLOSED | ARCHIVED
+    notes: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Memory Governor & Anti-Poisoning Schemas
+# ---------------------------------------------------------------------------
+
+
+class QuarantineItemModel(BaseModel):
+    """Vector candidate quarantined for observation before baseline promotion."""
+    vector_id: str
+    camera_id: str
+    channel: int
+    vector_preview: List[float] = Field(default_factory=list)
+    created_at: float
+    expires_at: float
+    anomaly_score: float
+    status: str = "QUARANTINED"  # QUARANTINED | PROMOTED | REJECTED | EXPIRED
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class QuarantinePromotionRequest(BaseModel):
+    """Request to promote quarantined vector(s) to active Qdrant baseline."""
+    vector_ids: Optional[List[str]] = None
+    camera_id: Optional[str] = None
+    force: bool = False
+
+
+class MemoryStatsResponse(BaseModel):
+    """Memory governor and vector capacity telemetry."""
+    total_quarantined: int
+    quarantine_by_camera: Dict[str, int] = Field(default_factory=dict)
+    total_baseline_points: int
+    baseline_by_camera: Dict[str, int] = Field(default_factory=dict)
+    max_vectors_per_camera: int
+    retention_days: int
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Streaming Backpressure & Load Shedding Schemas
+# ---------------------------------------------------------------------------
+
+
+class LoadSheddingStatus(BaseModel):
+    """Telemetry and active level for adaptive backpressure system."""
+    current_level: int  # 0: NORMAL, 1: SCORE_ONLY, 2: PASSTHROUGH, 3: SHED_LOAD
+    level_name: str
+    auto_mode: bool
+    avg_latency_ms: float
+    queue_depth: int
+    total_requests: int
+    shed_requests_count: int
+
+
+class LoadSheddingLevelRequest(BaseModel):
+    """Request to change backpressure mode or force specific level."""
+    level: Optional[int] = None
+    auto_mode: Optional[bool] = None
+
+
+# ---------------------------------------------------------------------------
 # Twelve Labs Search & Analysis Schemas
 # ---------------------------------------------------------------------------
 
