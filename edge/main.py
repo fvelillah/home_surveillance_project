@@ -23,7 +23,7 @@ from typing import AsyncGenerator, Dict, List, Optional
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
@@ -282,43 +282,55 @@ app = create_app()
 # Helper: Multipart MJPEG Stream Generator
 # ----------------------------------------------------------------------
 
-async def mjpeg_frame_generator(channel: int, target_fps: int = 10) -> AsyncGenerator[bytes, None]:
+async def mjpeg_frame_generator(
+    channel: int, target_fps: int = 10, request: Optional[Request] = None
+) -> AsyncGenerator[bytes, None]:
     """Yield multipart JPEG chunks for zero-latency direct browser streaming."""
     frame_interval = 1.0 / max(target_fps, 1)
 
-    while True:
-        frame_bytes: Optional[bytes] = None
+    try:
+        while True:
+            if request and await request.is_disconnected():
+                break
 
-        if app_state:
-            frame = app_state.capture_manager.get_latest_frame(channel)
-            if frame is not None:
-                ret, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            frame_bytes: Optional[bytes] = None
+
+            if app_state:
+                frame = app_state.capture_manager.get_latest_frame(channel)
+                if frame is not None:
+                    ret, buf = await asyncio.to_thread(
+                        cv2.imencode, ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80]
+                    )
+                    if ret:
+                        frame_bytes = buf.tobytes()
+
+            if frame_bytes is None:
+                placeholder = np.zeros((480, 704, 3), dtype=np.uint8)
+                cv2.putText(
+                    placeholder,
+                    f"Camera {channel} Connecting...",
+                    (180, 240),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    (180, 180, 180),
+                    2,
+                )
+                ret, buf = await asyncio.to_thread(
+                    cv2.imencode, ".jpg", placeholder, [cv2.IMWRITE_JPEG_QUALITY, 60]
+                )
                 if ret:
                     frame_bytes = buf.tobytes()
 
-        if frame_bytes is None:
-            # Generate black placeholder frame with text if stream is warming up
-            placeholder = np.zeros((480, 704, 3), dtype=np.uint8)
-            cv2.putText(
-                placeholder,
-                f"Camera {channel} Connecting...",
-                (180, 240),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.9,
-                (180, 180, 180),
-                2,
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(frame_bytes)).encode("utf-8") + b"\r\n\r\n"
+                + frame_bytes + b"\r\n"
             )
-            _, buf = cv2.imencode(".jpg", placeholder, [cv2.IMWRITE_JPEG_QUALITY, 60])
-            frame_bytes = buf.tobytes()
 
-        yield (
-            b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n"
-            b"Content-Length: " + str(len(frame_bytes)).encode("utf-8") + b"\r\n\r\n"
-            + frame_bytes + b"\r\n"
-        )
-
-        await asyncio.sleep(frame_interval)
+            await asyncio.sleep(frame_interval)
+    except (asyncio.CancelledError, GeneratorExit):
+        pass
 
 
 # ----------------------------------------------------------------------
@@ -395,7 +407,7 @@ async def get_camera_detail(channel: int):
 
 
 @app.get("/api/v1/stream/{channel}/live", tags=["Video Stream"])
-async def stream_live_mjpeg(channel: int, fps: Optional[int] = Query(None, ge=1, le=25)):
+async def stream_live_mjpeg(request: Request, channel: int, fps: Optional[int] = Query(None, ge=1, le=25)):
     """
     Direct HTTP MJPEG multipart stream proxy.
     Directly streams decoded video frames from the camera's RAM ring buffer.
@@ -405,7 +417,7 @@ async def stream_live_mjpeg(channel: int, fps: Optional[int] = Query(None, ge=1,
 
     target_fps = fps or app_state.config.ingest_fps
     return StreamingResponse(
-        mjpeg_frame_generator(channel, target_fps=target_fps),
+        mjpeg_frame_generator(channel, target_fps=target_fps, request=request),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
@@ -421,6 +433,60 @@ async def get_camera_snapshot(channel: int):
         raise HTTPException(status_code=504, detail=f"Snapshot unavailable for channel {channel}")
 
     return Response(content=image_bytes, media_type="image/jpeg")
+ 
+ 
+@app.websocket("/api/v1/stream/{channel}/ws")
+async def stream_live_ws(websocket: WebSocket, channel: int):
+    """
+    Direct WebSocket binary JPEG stream proxy.
+    Bypasses browser HTTP/1.1 6-connection limits, allowing all 9 camera channels
+    to stream concurrently with low latency and zero socket starvation.
+    """
+    await websocket.accept()
+    if not app_state or channel not in app_state.capture_manager.workers:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    target_fps = app_state.config.ingest_fps or 10
+    interval = 1.0 / max(target_fps, 1)
+
+    try:
+        while True:
+            frame_bytes: Optional[bytes] = None
+            if app_state:
+                frame = app_state.capture_manager.get_latest_frame(channel)
+                if frame is not None:
+                    ret, buf = await asyncio.to_thread(
+                        cv2.imencode, ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80]
+                    )
+                    if ret:
+                        frame_bytes = buf.tobytes()
+
+            if frame_bytes is None:
+                placeholder = np.zeros((480, 704, 3), dtype=np.uint8)
+                cv2.putText(
+                    placeholder,
+                    f"Camera {channel} Connecting...",
+                    (180, 240),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9,
+                    (180, 180, 180),
+                    2,
+                )
+                ret, buf = await asyncio.to_thread(
+                    cv2.imencode, ".jpg", placeholder, [cv2.IMWRITE_JPEG_QUALITY, 60]
+                )
+                if ret:
+                    frame_bytes = buf.tobytes()
+
+            if frame_bytes:
+                await websocket.send_bytes(frame_bytes)
+
+            await asyncio.sleep(interval)
+    except (WebSocketDisconnect, ConnectionResetError, asyncio.CancelledError):
+        pass
+    except Exception as exc:
+        logger.debug("WS stream channel %d closed: %s", channel, exc)
 
 
 @app.get("/api/v1/scores", tags=["Anomaly Scoring"])

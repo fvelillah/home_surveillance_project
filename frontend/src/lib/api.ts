@@ -277,12 +277,28 @@ export const central = {
 /* Edge Node Endpoints (port 7777)                                    */
 /* ------------------------------------------------------------------ */
 
+export function getEdgeBaseUrl(): string {
+  if (process.env.NEXT_PUBLIC_EDGE_URL) {
+    return process.env.NEXT_PUBLIC_EDGE_URL;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:7777`;
+  }
+  return EDGE_URL;
+}
+
 export function edgeLiveStreamUrl(channel: number): string {
-  return `${EDGE_URL}/api/v1/stream/${channel}/live`;
+  return `${getEdgeBaseUrl()}/api/v1/stream/${channel}/live`;
 }
 
 export function edgeSnapshotUrl(channel: number): string {
-  return `${EDGE_URL}/api/v1/stream/${channel}/snapshot`;
+  return `${getEdgeBaseUrl()}/api/v1/stream/${channel}/snapshot`;
+}
+
+export function edgeWsStreamUrl(channel: number): string {
+  const base = getEdgeBaseUrl();
+  const wsBase = base.replace(/^http/, "ws");
+  return `${wsBase}/api/v1/stream/${channel}/ws`;
 }
 
 /* ------------------------------------------------------------------ */

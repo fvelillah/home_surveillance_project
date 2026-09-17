@@ -141,3 +141,12 @@ def test_trigger_triage_endpoint():
     assert data["channel"] == 1
     assert data["score"] == 0.95
     assert "incident_id" in data
+
+
+def test_websocket_stream_endpoint():
+    client = TestClient(app)
+    with client.websocket_connect("/api/v1/stream/1/ws") as websocket:
+        data = websocket.receive_bytes()
+        assert len(data) > 100
+        # Check JPEG header magic bytes
+        assert data[:2] == b"\xff\xd8"
