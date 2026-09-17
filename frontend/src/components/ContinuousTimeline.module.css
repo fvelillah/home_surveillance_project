@@ -1,0 +1,148 @@
+.wrapper {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.timeRange {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+/* Timeline area */
+.timeline {
+  position: relative;
+  width: 100%;
+}
+
+/* Hour labels */
+.hourLabels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.hourLabel {
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  width: 28px;
+  text-align: center;
+}
+
+/* Camera rows */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 16px;
+}
+
+.rowLabel {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  width: 56px;
+  flex-shrink: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowTrack {
+  flex: 1;
+  height: 12px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Incident blocks */
+.incidentBlock {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+  min-width: 3px;
+}
+.incidentBlock:hover {
+  opacity: 0.85;
+  z-index: 2;
+}
+
+/* Tooltip */
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+  box-shadow: var(--shadow-elevated);
+  font-size: 0.68rem;
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tooltipTime {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+/* Now indicator */
+.nowLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--accent-cyan);
+  z-index: 5;
+  pointer-events: none;
+}
+.nowLine::after {
+  content: "NOW";
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  letter-spacing: 0.05em;
+}

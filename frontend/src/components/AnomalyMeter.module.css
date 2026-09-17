@@ -1,0 +1,42 @@
+.wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.svg {
+  transform: rotate(-90deg);
+}
+
+.trackCircle {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.06);
+}
+
+.valueCircle {
+  fill: none;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.8s var(--ease-out), stroke 0.5s var(--ease-out);
+}
+
+.label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  line-height: 1;
+}
+
+.caption {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
