@@ -106,12 +106,20 @@ $$\text{Severity} = \text{clamp}\left(\left(0.60 \cdot S_{\text{peak}} + 0.25 \c
     - `update_status(incident_id, status, notes) -> Optional[IncidentRecord]`: Transitions lifecycle between `OPEN`, `ACKNOWLEDGED`, `CLOSED`, and `ARCHIVED`.
     - `attach_vlm_explanation(incident_id, explanation) -> Optional[IncidentRecord]`: Links structured Pegasus VLM breakdown.
 
-### 3.2 `backend/vlm_explainer.py` — Natural Language VLM Scene Explainer
-- **Purpose**: Generates human-interpretable natural language security breakdowns from incident video clips strictly via Twelve Labs Pegasus VLM.
+### 3.2 `backend/vlm_explainer.py` & `scripts/evaluate_vlm.py` — Natural Language VLM Scene Explainer & Evaluation CLI
+- **Purpose**: Generates human-interpretable natural language security breakdowns from incident video clips strictly via Twelve Labs Pegasus VLM, and provides a standalone CLI evaluation tool.
 - **Key Classes & Functions**:
   - `VLM_ANALYSIS_PROMPT`: Structured prompt directing Twelve Labs Pegasus to return strict JSON schema.
   - `_parse_vlm_text_response(raw_text) -> dict`: Robust JSON extractor supporting Markdown code fences, raw JSON regex matching, and fallback plain-text encapsulation.
   - `explain_incident(incident, video_id, clip_path) -> VLMExplanation`: Asynchronous pipeline interfacing exclusively with Pegasus video upload and analysis. If Twelve Labs is disabled or unconfigured, it raises `RuntimeError`. If neither `video_id` nor `clip_path` is provided, it raises `ValueError`. Synthetic heuristic fallbacks are completely eliminated.
+- **CLI Evaluation Tool (`scripts/evaluate_vlm.py`)**:
+  - Automatically scans `data/tests/` for video clips (`.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`) or accepts specific video files via `--video`.
+  - Supports `--all` for batch evaluation of test directories.
+  - Supports `--generate-sample` for instant synthetic surveillance clip generation and verification.
+  - Supports `--video-id` for querying pre-indexed Twelve Labs video clips without re-uploading.
+  - Renders rich ANSI terminal output with severity badges and risk assessment formatting (`ROUTINE`, `SUSPICIOUS`, `HAZARD`, `BREACH`).
+  - Supports raw JSON formatting (`--json`) and disk export (`--output`).
+  - Supports offline / CI mock mode (`--mock`).
 
 ### 3.3 `backend/memory.py` — Memory Governor & Anti-Poisoning Engine
 - **Purpose**: Protects the central Qdrant baseline against concept drift and malicious or corrupted vector poisoning, persisting candidate quarantine points to a dedicated Qdrant staging collection (`anomaly_quarantine`).
@@ -199,6 +207,13 @@ uv run pytest tests/test_backend_incidents.py tests/test_vlm_explainer.py tests/
   - `test_manual_level_override`: Verifies manual tier override capabilities.
   - `test_adaptive_level_transitions`: Verifies automatic transitions from Level 0 $\to$ Level 1 $\to$ Level 2 $\to$ Level 3 under simulated latency spikes and queue backpressure.
   - `test_status_telemetry`: Verifies real-time metrics tracking.
+- `tests/test_evaluate_vlm_script.py`:
+  - `test_generate_and_extract_metadata`: Verifies OpenCV video creation and dimension/fps/duration metadata extraction.
+  - `test_discover_test_videos`: Validates multi-extension file discovery in test directory.
+  - `test_create_incident_record`: Validates severity mapping into badges and incident data structures.
+  - `test_run_evaluation_mock`: Validates offline evaluation without API keys.
+  - `test_run_evaluation_live_pegasus_mocked`: Validates live Pegasus integration flow.
+  - `test_cli_main_with_sample_and_output`: Validates CLI execution with JSON file export.
 - `tests/test_backend_api.py`:
   - `test_incidents_api_lifecycle`: Full end-to-end integration test of incident creation, listing, querying by ID, status updates, and VLM explanation regeneration via Pegasus (verifying 503 when unconfigured and 200 when active).
   - `test_memory_governor_api`: Integration test of quarantine staging, listing, promotion, and stats endpoints.

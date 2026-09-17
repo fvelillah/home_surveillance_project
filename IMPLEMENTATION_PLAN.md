@@ -421,7 +421,7 @@ curl -X POST http://localhost:9876/api/v1/search \
 
 ### Phase 4: Incident Formation, VLM Scene Understanding & Governance
 - **4.1 Incident Formation Engine (`backend/incidents.py`)**: EMA score smoothing, hysteresis bounds ($T_{\text{start}}=0.080, T_{\text{end}}=0.050$), cooldown merging, and 0–100 severity normalization.
-- **4.2 Natural Language VLM Scene Explainer (`backend/vlm_explainer.py`)**: Twelve Labs Pegasus / Gemini VLM integration generating structured incident breakdowns from high-res Main-Stream clips.
+- **4.2 Natural Language VLM Scene Explainer (`backend/vlm_explainer.py`, `scripts/evaluate_vlm.py`)**: Twelve Labs Pegasus VLM integration generating structured incident breakdowns from high-res clips, accompanied by a standalone CLI evaluation tool (`scripts/evaluate_vlm.py`) supporting test directory scanning (`data/tests/`), sample generation, and offline mock evaluation.
 - **4.3 Memory Governor & Anti-Poisoning (`backend/memory.py`)**: 1-hour quarantine buffer, 7-day retention scrub, and per-camera vector caps to prevent environmental drift.
 - **4.4 Streaming Backpressure & Load Shedding (`backend/streaming.py`)**: Adaptive 4-level load shedding (`NORMAL`, `SCORE_ONLY`, `PASSTHROUGH`, `SHED_LOAD`).
 
@@ -483,7 +483,7 @@ curl -X POST http://localhost:9876/api/v1/search \
 
 ### Phase 4: Incident Formation, VLM Scene Understanding & Governance
 - [x] **Task 4.1**: Implement incident formation engine (`backend/incidents.py`) with EMA smoothing, hysteresis thresholds, and cooldown merging.
-- [x] **Task 4.2**: Implement Twelve Labs Pegasus / Gemini VLM natural-language scene explainer (`backend/vlm_explainer.py`).
+- [x] **Task 4.2**: Implement Twelve Labs Pegasus VLM natural-language scene explainer (`backend/vlm_explainer.py`), standalone CLI evaluation tool (`scripts/evaluate_vlm.py`), and test suite (`tests/test_evaluate_vlm_script.py`).
 - [x] **Task 4.3**: Implement memory governor (`backend/memory.py`) with quarantine buffer, 1-hour aging, 7-day retention scrub, and per-camera caps.
 - [x] **Task 4.4**: Implement streaming backpressure and load-shedding manager (`backend/streaming.py`).
 

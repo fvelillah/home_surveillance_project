@@ -88,6 +88,11 @@ async def explain_incident(
             raise RuntimeError(f"Failed to upload clip to Pegasus index: {exc}") from exc
 
     if not target_video_id:
+        if clip_path:
+            raise RuntimeError(
+                f"Cannot perform Pegasus VLM explanation for incident '{incident.incident_id}': "
+                f"failed to obtain pegasus_video_id for clip '{clip_path}'"
+            )
         raise ValueError(
             f"Cannot perform Pegasus VLM explanation for incident '{incident.incident_id}': "
             "no video_id or clip_path provided"
