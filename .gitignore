@@ -1,0 +1,55 @@
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Storage, Database & Real Media Footage
+data/
+storage/
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.m4v
+*.asf
+*.dav
+*.h264
+*.h265
+*.jpg
+*.jpeg
+*.png
+*.sqlite3
+*.db
+qdrant_storage/
+data/qdrant_edge/
+
+# Logs & Runtime
+*.log
+*.err
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+
+# Frontend & Node
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo

@@ -1,0 +1,143 @@
+
+networks:
+  surveillance-net:
+    driver: bridge
+
+volumes:
+  qdrant_data:
+    driver: local
+
+services:
+  # -------------------------------------------------------------------------
+  # 1. Edge Ingestion, Segmenter, PyTorch Model & Qdrant Edge Node
+  # -------------------------------------------------------------------------
+  surveillance-edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    image: dahua-surveillance-edge:latest
+    container_name: surveillance-edge-prod
+    restart: unless-stopped
+    networks:
+      - surveillance-net
+    ports:
+      - "7777:7777"
+    env_file:
+      - .env
+    environment:
+      - EDGE_HOST=0.0.0.0
+      - EDGE_PORT=7777
+      - STORAGE_DIR=/app/data/storage
+      - QDRANT_EDGE_PATH=/app/data/qdrant_edge
+    volumes:
+      - ./data:/app/data
+      - /mnt/e/NVR:/mnt/e/NVR:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7777/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # -------------------------------------------------------------------------
+  # 2. Central Cloud Backend, Twelve Labs VLM, Anomaly Scorer & Incident Engine
+  # -------------------------------------------------------------------------
+  surveillance-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: dahua-surveillance-backend:latest
+    container_name: surveillance-backend-prod
+    restart: unless-stopped
+    networks:
+      - surveillance-net
+    ports:
+      - "9876:9876"
+    env_file:
+      - .env
+    environment:
+      - CENTRAL_HOST=0.0.0.0
+      - CENTRAL_PORT=9876
+      - EDGE_HOST=surveillance-edge
+      - EDGE_PORT=7777
+    volumes:
+      - ./data/storage:/app/data/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9876/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # -------------------------------------------------------------------------
+  # 3. Next.js 14 Multi-Camera Cyber-Defense Operator Console
+  # -------------------------------------------------------------------------
+  surveillance-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: dahua-surveillance-frontend:latest
+    container_name: surveillance-frontend-prod
+    restart: unless-stopped
+    networks:
+      - surveillance-net
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:9876
+      - NEXT_PUBLIC_EDGE_URL=http://localhost:7777
+    depends_on:
+      surveillance-edge:
+        condition: service_healthy
+      surveillance-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # -------------------------------------------------------------------------
+  # 4. Optional Local Qdrant Vector Cluster (On-Premises / Offline profile)
+  # -------------------------------------------------------------------------
+  surveillance-qdrant:
+    image: qdrant/qdrant:v1.9.2
+    container_name: surveillance-qdrant-local
+    restart: unless-stopped
+    networks:
+      - surveillance-net
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    profiles:
+      - on-prem
+      - full-stack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

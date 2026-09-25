@@ -1,0 +1,56 @@
+[project]
+name = "home-surveillance"
+version = "0.1.0"
+description = "AI-Powered Home Security Surveillance Analytics Platform using Dahua Direct HTTP Streaming"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "opencv-python-headless>=4.8.0,<5.0.0; sys_platform != 'darwin'",
+    "opencv-python>=4.8.0,<5.0.0; sys_platform == 'darwin'",
+    "numpy>=1.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+    "urllib3>=2.0.0",
+    "fastapi>=0.110.0",
+    "python-multipart>=0.0.9",
+    "uvicorn[standard]>=0.28.0",
+    "httpx>=0.27.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "pillow>=10.0.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "onnxruntime>=1.17.0,<1.24.0",
+    "qdrant-client>=1.8.0",
+    "scipy>=1.11.0",
+    "scikit-learn>=1.3.0",
+    "twelvelabs>=0.4.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --asyncio-mode=auto -p no:launch_testing -p no:launch_ros"
+testpaths = [
+    "tests",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["edge", "backend"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+

@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  edge-ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    container_name: surveillance-edge-ingestion
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "7777:7777"
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7777/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional mock simulator service for local dev/testing without physical NVR
+  feed-simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.edge
+    container_name: surveillance-feed-simulator
+    restart: "no"
+    command: ["python", "scripts/simulate_dahua_feeds.py", "--port", "8888", "--channels", "9"]
+    ports:
+      - "8888:8888"
+    profiles:
+      - test

@@ -1,0 +1,21 @@
+[Unit]
+Description=Dahua Surveillance Platform - Central Cloud Analytics & Incident Service
+After=network-online.target surveillance-edge.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=surveillance
+Group=surveillance
+WorkingDirectory=/opt/home_surveillance_project
+EnvironmentFile=/opt/home_surveillance_project/.env
+ExecStart=/opt/home_surveillance_project/.venv/bin/python -m uvicorn backend.main:app --host 0.0.0.0 --port 9876 --workers 1
+Restart=always
+RestartSec=5s
+Nice=0
+StandardOutput=append:/opt/home_surveillance_project/data/storage/backend_service.log
+StandardError=append:/opt/home_surveillance_project/data/storage/backend_service.err
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

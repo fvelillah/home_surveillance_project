@@ -1,0 +1,39 @@
+# syntax=docker/dockerfile:1
+FROM python:3.10-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Install runtime dependencies for multimedia and networking
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ffmpeg \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install uv for deterministic dependency synchronization
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+
+# Install Python backend dependencies
+COPY pyproject.toml .
+RUN uv pip install --system -e ".[ml]"
+
+# Copy backend application source
+COPY backend/ ./backend/
+COPY edge/ ./edge/
+COPY scripts/ ./scripts/
+COPY model_server.py .
+COPY .env* ./
+
+# Ensure storage directories exist
+RUN mkdir -p /app/data/storage/incidents /app/data/storage/snapshots
+
+EXPOSE 9876
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:9876/health || exit 1
+
+ENTRYPOINT ["python", "-m", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "9876"]

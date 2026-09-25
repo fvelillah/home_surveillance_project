@@ -1,0 +1,55 @@
+.dashboardRoot {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100vw;
+  background: var(--bg-deep);
+  position: relative;
+  z-index: 1;
+}
+
+.mainLayout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 16px;
+  padding: 16px 20px;
+  flex-grow: 1;
+}
+
+@media (max-width: 1200px) {
+  .mainLayout {
+    grid-template-columns: 1fr 320px;
+  }
+}
+
+@media (max-width: 960px) {
+  .mainLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cameraSection {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.alertSection {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 100px);
+  position: sticky;
+  top: 70px;
+}
+
+@media (max-width: 960px) {
+  .alertSection {
+    position: static;
+    height: 480px;
+  }
+}
+
+.timelineSection {
+  padding: 0 20px 20px 20px;
+  width: 100%;
+}
